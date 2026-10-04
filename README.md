@@ -140,14 +140,18 @@ cd /var/discourse && ./launcher rebuild app
 
 ```bash
 npm install                 # 仅需 content-tag
-python scripts/validate.py  # 15 项静态检查
-bash scripts/selftest.sh    # 证明上述检查确实会失败
-ruby scripts/test_parsing.rb  # 用真实数据验证解析逻辑
+python scripts/validate.py  # 18 项静态检查
+bash scripts/selftest.sh    # 证明上述检查确实会失败（20 个注入用例）
+ruby scripts/test_parsing.rb  # 加载真实实现 + 真实数据验证解析逻辑
 ```
 
 `validate.py` 覆盖的都是**静默失败**场景 —— 插件能加载、日志无报错、功能就是不工作：
 
 - 插件目录名 ≠ `# name:`
+- **`PLUGIN_NAME` 被使用但未定义** —— 核心不提供该常量，见下方「启动失败的两个陷阱」
+- **`lib/` 下的文件继承 Zeitwerk 加载的 app 类**（`ApplicationSerializer` 等）
+- **序列化器不在 `app/serializers/` 下**
+- **Engine 缺少 `engine_name`**；`lib/` 文件名与所定义常量不匹配
 - `require_relative` 指向 `app/` 下的文件（`Zeitwerk::NameError` 导致启动失败）
 - 引擎用 `after_initialize` + `append` 挂载（直接访问 404）
 - 顶层路由用对象形式导出（路由被静默丢弃）
@@ -162,23 +166,69 @@ ruby scripts/test_parsing.rb  # 用真实数据验证解析逻辑
 
 `selftest.sh` 会把插件复制到临时目录并逐一注入上述错误，断言 `validate.py` 对**每一个**都报错 —— 只会通过的检查等于没有检查。
 
+## 启动失败的两个陷阱
+
+这两个坑都**不会**在开发环境暴露，只在生产 `./launcher rebuild` 时炸，而且报错信息指向错误的方向。
+
+### 1. `PLUGIN_NAME` 不是核心提供的常量
+
+`Plugin::Instance#activate!` 执行的是 `instance_eval File.read(path), path`，核心**没有**定义 `PLUGIN_NAME`（在 `lib/plugin/instance.rb` 里 grep 零命中）。官方骨架自己定义它：
+
+```ruby
+module ::RelayRooms
+  PLUGIN_NAME = "discourse-relay-rooms"
+end
+
+require_relative "lib/relay_rooms/engine"   # 必须在上面定义之后
+```
+
+漏掉会怎样：`requires_plugin PLUGIN_NAME` 抛 `NameError`。而 `plugin.rb` 是在 `config/application.rb` 里被求值的 —— **早于 `Rails.application.initialize!`** —— 于是这个异常被 `Plugin.initialization_guard` 捕获，打印
+
+```
+You are unable to start Discourse due to errors in the plugin at
+/var/www/discourse/plugins/<目录名>
+```
+
+然后 **`exit 1`**。这个 `exit 1` 又会让紧接着的 `rake db:migrate` 失败，报成：
+
+```
+Pups::ExecError: cd /var/www/discourse && su discourse -c 'bundle exec rake db:migrate' failed
+```
+
+**两条报错是同一个事件**，不要去查迁移文件。
+
+注意 `engine.rb` 里的 `engine_name PLUGIN_NAME` 是在**类体求值**时解析的，所以定义必须放在 `require_relative` **之前**。
+
+### 2. 继承 app 类的文件不能放在 `lib/`
+
+`lib/` 里的文件由 `plugin.rb` 用 `require_relative` 加载，也就是**在 Zeitwerk 建立之前**。所以：
+
+```ruby
+# lib/relay_rooms/room_serializer.rb —— 会炸
+class RoomSerializer < ::ApplicationSerializer
+# NameError: uninitialized constant ApplicationSerializer
+```
+
+结论：**序列化器放 `app/serializers/<命名空间>/`**，交给 Zeitwerk 在启动后加载。核心插件都是这么做的（`discourse-solved`、`discourse-data-explorer`）。同理，任何继承 `ApplicationController`、`ActiveRecord::Base` 的文件都必须放 `app/`。
+
 ## 目录结构
 
 ```
 discourse-relay-rooms/
-├── plugin.rb                        # 元数据、站点设置、资源注册、管理路由
+├── plugin.rb                        # PLUGIN_NAME 定义、元数据、站点设置、资源注册、管理路由
 ├── config/
 │   ├── settings.yml
 │   ├── routes.rb                    # 引擎用 draw 挂载（不能放 after_initialize）
 │   └── locales/                     # server / client，各含 zh_CN 与 en
 ├── lib/relay_rooms/                 # 不被 Zeitwerk 接管，必须 require_relative
+│   ├── version.rb                   # 文件名必须匹配常量 Version
 │   ├── api_client.rb                # HTTP + 超时 + JSON 解析
-│   ├── room_presenter.rb            # 地图名/状态/加入链接归一化
+│   ├── room_presenter.rb            # RoomPresenter：地图名/状态/加入链接归一化
 │   ├── room_list.rb                 # 过滤、排序、缓存
-│   ├── room_serializer.rb           # 普通对象序列化器
-│   └── engine.rb
-├── app/
+│   └── engine.rb                    # engine_name PLUGIN_NAME + isolate_namespace
+├── app/                             # Zeitwerk 在启动后加载 —— 可安全继承 app 类
 │   ├── controllers/relay_rooms/     # pages（HTML 外壳）+ rooms（JSON 接口）
+│   ├── serializers/relay_rooms/     # room_serializer.rb（继承 ApplicationSerializer）
 │   └── views/relay_rooms/pages/     # 无 JS / 爬虫可见的真实内容
 ├── assets/
 │   ├── stylesheets/                 # 需显式 register_asset，且必须限定作用域

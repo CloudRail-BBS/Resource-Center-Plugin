@@ -1,5 +1,13 @@
 # frozen_string_literal: true
 
+# Explicit stdlib requires. This file is require_relative'd from plugin.rb during
+# plugin activation, which happens before Rails has finished booting — so it
+# cannot assume the app has pulled these in. Requiring stdlib here is safe at any
+# point in the boot sequence.
+require "json"
+require "net/http"
+require "uri"
+
 module ::RelayRooms
   # Talks to a CNKD relay node's public room-listing endpoint and normalises
   # the payload into something the presenter can consume.

@@ -1,7 +1,24 @@
 # frozen_string_literal: true
 
 module ::RelayRooms
-  # A plain (non-ActiveRecord) object so it can pass through
+  # WHY THIS FILE IS UNDER app/serializers AND NOT lib/
+  #
+  # It subclasses ::ApplicationSerializer, which is Zeitwerk-loaded from the
+  # main app. Plugin activation happens inside `config/application.rb`'s body —
+  # i.e. BEFORE `Rails.application.initialize!` sets up the autoloader — so a
+  # `require_relative` of this file from plugin.rb evaluates the class body while
+  # ApplicationSerializer is not yet resolvable:
+  #
+  #   NameError: uninitialized constant ApplicationSerializer
+  #
+  # That error surfaces as
+  #   "You are unable to start Discourse due to errors in the plugin at <dir>"
+  # followed by `exit 1`, which in turn fails the later `rake db:migrate` step
+  # with Pups::ExecError. Files under app/ are loaded after boot, so the
+  # superclass resolves normally. This matches where every core plugin keeps its
+  # serializers (discourse-solved, discourse-data-explorer, …).
+  #
+  # A plain (non-ActiveRecord) object is used so it can pass through
   # `ActiveModel::Serializer` without tripping Discourse's
   # accidental-serialization guard, which only allows ActiveRecord models,
   # Hashes and plain objects.

@@ -195,6 +195,39 @@ def check_engine_mount() -> None:
     if not re.search(r'get\s+"/"\s*=>\s*"pages#index"', body):
         fail('config/routes.rb is missing `get "/" => "pages#index"` in the engine')
 
+    # The Engine class must exist and set engine_name (the official skeleton
+    # does). Without it Rails has no engine name to key routes/helpers/assets on.
+    engine_rb = ROOT / "lib" / "relay_rooms" / "engine.rb"
+    if not engine_rb.exists():
+        fail("lib/relay_rooms/engine.rb is missing — config/routes.rb references ::RelayRooms::Engine")
+        return
+
+    engine_body = strip_ruby_comments(read(engine_rb))
+
+    if not re.search(r"<\s*::Rails::Engine", engine_body):
+        fail("lib/relay_rooms/engine.rb does not subclass ::Rails::Engine")
+
+    if not re.search(r"engine_name\s+PLUGIN_NAME", engine_body):
+        fail(
+            "lib/relay_rooms/engine.rb is missing `engine_name PLUGIN_NAME` — the "
+            "official skeleton sets it, and it is resolved during class-body "
+            "evaluation, so PLUGIN_NAME must be defined above the require in plugin.rb"
+        )
+
+    # `config.autoload_paths << lib` (which the skeleton does) is only safe when
+    # every lib file's name matches the constant it defines. Guard against the
+    # combination rather than the individual pieces.
+    if re.search(r"autoload_paths\s*<<.*[\"']lib[\"']", engine_body):
+        for path in sorted((ROOT / "lib").rglob("*.rb")):
+            leaf = path.stem
+            camel = "".join(word.capitalize() for word in leaf.split("_"))
+            if not re.search(rf"^\s*(class|module)\s+{camel}\b", read(path), re.M):
+                fail(
+                    f"engine.rb adds lib/ to autoload_paths, but lib/{path.name} does "
+                    f"not define {camel} — Zeitwerk::NameError on eager load. Either "
+                    "remove the autoload_paths line or rename the constant."
+                )
+
 
 # --------------------------------------------------------------------------
 # 5. Route map form, and route/template file paths
@@ -668,9 +701,9 @@ def shutil_which(name: str) -> str | None:
 # 13. Serializer attributes must all resolve
 # --------------------------------------------------------------------------
 def check_serializer_attributes() -> None:
-    path = ROOT / "lib" / "relay_rooms" / "room_serializer.rb"
+    path = ROOT / "app" / "serializers" / "relay_rooms" / "room_serializer.rb"
     if not path.exists():
-        fail("lib/relay_rooms/room_serializer.rb is missing")
+        fail("app/serializers/relay_rooms/room_serializer.rb is missing")
         return
 
     body = strip_ruby_comments(read(path))
@@ -750,12 +783,201 @@ def check_api_client() -> None:
 
 
 # --------------------------------------------------------------------------
+# 16. PLUGIN_NAME must be defined before it is used
+#
+# `Plugin::Instance#activate!` runs `instance_eval File.read(path), path`, and
+# nothing in core defines a PLUGIN_NAME constant (grep lib/plugin/instance.rb:
+# zero hits). The official skeleton defines it explicitly. Undefined, every
+# `requires_plugin PLUGIN_NAME` raises NameError — and because plugin.rb is
+# evaluated from config/application.rb's body, i.e. BEFORE
+# Rails.application.initialize!, that NameError is caught by
+# Plugin.initialization_guard, which prints "You are unable to start Discourse
+# due to errors in the plugin at <dir>" and calls `exit 1`. The `exit 1` then
+# fails the later `rake db:migrate` step, so a missing constant surfaces as a
+# migration error.
+# --------------------------------------------------------------------------
+def check_plugin_name_constant() -> None:
+    plugin_rb = ROOT / "plugin.rb"
+    if not plugin_rb.exists():
+        return
+
+    source = plugin_rb.read_text(encoding="utf-8")
+    body = strip_ruby_comments(source)
+
+    # Where is it defined, if at all?
+    definition = re.search(
+        r"module\s+::?(\w+)\s*\n(?:.*\n)*?\s*PLUGIN_NAME\s*=\s*\"([^\"]+)\"", body
+    )
+
+    users: list[tuple[str, str]] = []
+    for path in list(ROOT.rglob("*.rb")):
+        if "node_modules" in str(path) or path.name == "validate.py":
+            continue
+        if path == plugin_rb:
+            continue
+        text = strip_ruby_comments(read(path))
+        if re.search(r"\bPLUGIN_NAME\b", text):
+            users.append((str(path.relative_to(ROOT)), text))
+
+    uses_it = bool(users) or re.search(r"\bPLUGIN_NAME\b", body)
+    if not uses_it:
+        return
+
+    if not definition:
+        fail(
+            "PLUGIN_NAME is referenced but never defined. Core does not provide it; "
+            "add `module ::YourPlugin; PLUGIN_NAME = \"your-plugin-name\"; end` at the "
+            "top of plugin.rb. Undefined, this raises NameError during plugin "
+            "activation, which aborts boot with \"You are unable to start Discourse\" "
+            "and fails the later db:migrate step."
+        )
+        return
+
+    namespace, value = definition.group(1), definition.group(2)
+
+    if value != EXPECTED_NAME:
+        fail(f"PLUGIN_NAME is \"{value}\" but the plugin name is \"{EXPECTED_NAME}\"")
+
+    # It must be defined BEFORE the engine is required: engine.rb resolves
+    # `engine_name PLUGIN_NAME` while its class body is evaluated.
+    define_at = body.find("PLUGIN_NAME = ")
+    require_at = body.find('require_relative "lib/')
+    if define_at != -1 and require_at != -1 and define_at > require_at:
+        fail(
+            "PLUGIN_NAME is defined AFTER the first require_relative — engine.rb "
+            "resolves `engine_name PLUGIN_NAME` during class-body evaluation and "
+            "will raise NameError. Move the definition above the requires."
+        )
+
+    # A bare PLUGIN_NAME at plugin.rb's top level resolves against Object (the
+    # file is a string eval), missing ::YourPlugin::PLUGIN_NAME.
+    for line in strip_ruby_comments(source).splitlines():
+        if re.search(r"\bPLUGIN_NAME\b", line) and "PLUGIN_NAME =" not in line:
+            if not re.search(r"::|module\s|class\s", line):
+                warn(
+                    f'plugin.rb: bare PLUGIN_NAME in `{line.strip()}` — plugin.rb is a '
+                    f"string eval whose cref is Object, so use ::{namespace}::PLUGIN_NAME"
+                )
+
+    for relative, text in users:
+        # Inside `module ::YourPlugin`, a bare PLUGIN_NAME resolves correctly.
+        if not re.search(rf"module\s+::?{namespace}\b", text):
+            warn(f"{relative}: references PLUGIN_NAME outside module ::{namespace}")
+
+
+# --------------------------------------------------------------------------
+# 17. lib/ files must not subclass Zeitwerk-loaded app classes
+#
+# Plugin activation happens before the autoloader exists, so a lib/ file that is
+# require_relative'd from plugin.rb cannot resolve ApplicationSerializer,
+# ApplicationController, ActiveRecord::Base (app models), etc. That raises
+# NameError during activation → boot abort + db:migrate failure.
+#
+# Such classes belong in app/, which Zeitwerk loads after boot. Every core plugin
+# keeps serializers under app/serializers/ for exactly this reason.
+# --------------------------------------------------------------------------
+APP_LOADED_BASES = {
+    "ApplicationSerializer",
+    "ApplicationController",
+    "ApplicationJob",
+    "ActiveRecord::Base",
+    "ActiveModel::Serializer",
+    "Discourse::ApplicationController",
+    "Admin::AdminController",
+}
+
+
+def check_lib_does_not_use_app_classes() -> None:
+    lib_dir = ROOT / "lib"
+    if not lib_dir.exists():
+        return
+
+    for path in sorted(lib_dir.rglob("*.rb")):
+        body = strip_ruby_comments(read(path))
+
+        for base in APP_LOADED_BASES:
+            pattern = rf"class\s+\w+\s*<\s*(?:::)?{re.escape(base)}\b"
+            if re.search(pattern, body):
+                fail(
+                    f"lib/{path.relative_to(lib_dir)} subclasses {base}. lib/ is "
+                    "require_relative'd during plugin activation, which runs before "
+                    "the autoloader exists, so this raises NameError and aborts boot. "
+                    "Move the file to app/ (serializers → app/serializers/<ns>/)."
+                )
+
+        # Referencing any app constant at class-body time is the same hazard.
+        if re.search(r"^\s*(class|module)\s+\w+.*<\s*(?:::)?Application\w+", body, re.M):
+            fail(
+                f"lib/{path.relative_to(lib_dir)} references an Application* class in "
+                "its class body, which is not resolvable at plugin-activation time"
+            )
+
+    # The reverse rule: serializers must actually live under app/serializers.
+    for path in sorted(ROOT.rglob("*.rb")):
+        if "node_modules" in str(path):
+            continue
+        body = strip_ruby_comments(read(path))
+        if re.search(r"class\s+\w*Serializer\s*<", body):
+            # as_posix(): on Windows relative_to() yields backslashes, which would
+            # never match a forward-slash prefix.
+            relative = path.relative_to(ROOT).as_posix()
+            if not relative.startswith("app/serializers/"):
+                fail(
+                    f"{relative} defines a serializer outside app/serializers/ — "
+                    "it cannot resolve its base class during plugin activation"
+                )
+
+
+# --------------------------------------------------------------------------
+# 18. lib/ filenames should match the constant they define
+#
+# lib/ is not autoloaded today, so a mismatch is harmless *until* someone adds
+# `config.autoload_paths << lib` (which the official skeleton does). Then
+# Zeitwerk expects path-derived constants and raises NameError on eager load.
+# --------------------------------------------------------------------------
+def check_lib_filename_constants() -> None:
+    lib_dir = ROOT / "lib"
+    if not lib_dir.exists():
+        return
+
+    for path in sorted(lib_dir.rglob("*.rb")):
+        relative = path.relative_to(lib_dir)
+
+        if not relative.parts:
+            continue
+
+        # lib/<ns>/<file>.rb → <Ns>::<CamelFile>
+        parts = list(relative.with_suffix("").parts)
+        expected = "::".join(
+            "".join(word.capitalize() for word in part.split("_")) for part in parts
+        )
+
+        body = strip_ruby_comments(read(path))
+
+        # Collect constants actually defined at module/class level.
+        defined = set(re.findall(r"^\s*(?:class|module)\s+(\w+)", body, re.M))
+        defined |= set(re.findall(r"^\s*([A-Z][A-Za-z0-9_]*)\s*=", body, re.M))
+
+        leaf = parts[-1].split("_")
+        leaf_camel = "".join(w.capitalize() for w in leaf)
+
+        if leaf_camel not in defined:
+            warn(
+                f"lib/{relative} does not define {leaf_camel} (Zeitwerk would expect "
+                f"{expected} if lib/ were ever added to autoload_paths)"
+            )
+
+
+# --------------------------------------------------------------------------
 def main() -> int:
     checks = (
         check_plugin_name,
+        check_plugin_name_constant,
         check_requires,
         check_registered_assets,
         check_engine_mount,
+        check_lib_does_not_use_app_classes,
+        check_lib_filename_constants,
         check_route_map,
         check_parent_outlet,
         check_nav_class_collision,

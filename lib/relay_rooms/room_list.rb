@@ -10,13 +10,13 @@ module ::RelayRooms
     # Returns the normalised payload Hash. Raises RelayRooms::ApiClient::Error.
     def fetch
       raw = RelayRooms::ApiClient.fetch
-      rooms = build_rooms(raw["rooms"], raw["update_timestamp"])
+      rooms = build_rooms(raw["rooms"])
 
       {
         "node_name" => raw["node_name"],
         "node_role" => raw["node_role"],
         "node_code" => raw["node_code"],
-        "room_count" => RelayRooms.effective_room_count(raw["rooms"]),
+        "room_count" => RoomPresenter.effective_room_count(raw["rooms"]),
         "reported_room_count" => raw["room_count"],
         "update_time" => raw["update_time"],
         "update_timestamp" => raw["update_timestamp"],
@@ -32,21 +32,21 @@ module ::RelayRooms
       Discourse.cache.fetch(CACHE_KEY, expires_in: ttl.seconds) { fetch }
     end
 
-    def build_rooms(rooms, node_timestamp)
+    def build_rooms(rooms)
       now = Time.zone.now.to_i
-      filtered = Array(rooms).select { |room| visible?(room) }
 
-      filtered
-        .map { |room| build_room(room, node_timestamp, now) }
+      Array(rooms)
+        .select { |room| visible?(room) }
+        .map { |room| build_room(room, now) }
         .sort_by { |room| [status_rank(room[:status]), -room[:created_at].to_i] }
     end
 
     def visible?(room)
       return false unless room.is_a?(Hash)
-      return false if RelayRooms.normalize_status(room["status"]) == "closed"
 
-      normalized = RelayRooms.normalize_status(room["status"])
-      return false if normalized == "ingame" && !SiteSetting.relay_rooms_show_ingame
+      status = RoomPresenter.normalize_status(room["status"])
+      return false if status == "closed"
+      return false if status == "ingame" && !SiteSetting.relay_rooms_show_ingame
 
       true
     end
@@ -55,8 +55,8 @@ module ::RelayRooms
       status == "battleroom" ? 0 : 1
     end
 
-    def build_room(room, node_timestamp, now)
-      map = RelayRooms.parse_map_name(room["mapName"])
+    def build_room(room, now)
+      map = RoomPresenter.parse_map_name(room["mapName"])
       player_size = room["playerSize"].to_i
       active = room["activeConnectionSize"].to_i
       created_at = room["roomCreateTime"].to_i
@@ -69,7 +69,7 @@ module ::RelayRooms
         room_id: room["roomId"].to_s,
         display_id: room["displayId"].to_s.presence,
         lookup_id: room["lookupId"].to_s.presence,
-        status: RelayRooms.normalize_status(room["status"]),
+        status: RoomPresenter.normalize_status(room["status"]),
         player_size: player_size,
         active_connection_size: active,
         host_name: room["hostName"].to_s.presence,
@@ -80,7 +80,7 @@ module ::RelayRooms
         is_custom: room["customRoom"] == true,
         is_full: player_size.positive? && active >= player_size,
         is_empty: active.zero?,
-        join_url: RelayRooms.join_url(room["joinLink"]),
+        join_url: RoomPresenter.join_url(room["joinLink"]),
         join_label: room["joinLink"].to_s.presence,
         created_at: created_at.positive? ? created_at : nil,
         last_activity_at: last_activity_at.positive? ? last_activity_at : nil,

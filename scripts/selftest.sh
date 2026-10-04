@@ -94,7 +94,7 @@ run_case "stale-import" \
 
 # 10. A serializer attribute with no reader (every endpoint 500s)
 run_case "serializer-no-reader" \
-  "sed -i 's/^               :activity_ratio/:activity_ratio_broken/' lib/relay_rooms/room_serializer.rb"
+  "sed -i 's/^               :activity_ratio/:activity_ratio_broken/' app/serializers/relay_rooms/room_serializer.rb"
 
 # 11. Missing i18n key used from a template.
 #     Anchored loosely on purpose: a `sed` that fails to match leaves the file
@@ -117,6 +117,32 @@ run_case "format-gate" \
 # 15. A .gjs parse error (replaces the ENTIRE plugin bundle with a throw)
 run_case "gjs-parse-error" \
   'printf "\n<script>\nexport const x = 1;\n</script>\n<template><div></div></template>\n" >> assets/javascripts/discourse/components/relay-rooms-icon.gjs'
+
+# 16. PLUGIN_NAME used but never defined. This is the defect that aborted boot on
+#     the real install: the NameError is caught by Plugin.initialization_guard,
+#     which prints "You are unable to start Discourse ..." and calls exit 1, so
+#     it also fails the later rake db:migrate step.
+run_case "plugin-name-undefined" \
+  'sed -i "/PLUGIN_NAME = \"discourse-relay-rooms\"/d" plugin.rb'
+
+# 17. PLUGIN_NAME defined AFTER the requires — engine.rb resolves
+#     `engine_name PLUGIN_NAME` during class-body evaluation, so this raises.
+run_case "plugin-name-defined-late" \
+  'sed -i "/PLUGIN_NAME = \"discourse-relay-rooms\"/d" plugin.rb; printf "\nmodule ::RelayRooms\n  PLUGIN_NAME = \"discourse-relay-rooms\"\nend\n" >> plugin.rb'
+
+# 18. Engine missing `engine_name` (the official skeleton sets it)
+run_case "engine-missing-engine-name" \
+  'sed -i "s/^    engine_name PLUGIN_NAME$//" lib/relay_rooms/engine.rb'
+
+# 19. Serializer moved back into lib/, where it cannot resolve its
+#     Zeitwerk-loaded base class during plugin activation.
+run_case "serializer-in-lib" \
+  'mv app/serializers/relay_rooms/room_serializer.rb lib/relay_rooms/room_serializer.rb'
+
+# 20. lib/ added to autoload_paths while a file's constant does not match its
+#     path — Zeitwerk::NameError on eager load.
+run_case "lib-autoloaded-constant-mismatch" \
+  'sed -i "s|^    isolate_namespace RelayRooms$|    isolate_namespace RelayRooms\n    config.autoload_paths << File.join(config.root, \"lib\")|" lib/relay_rooms/engine.rb; printf "# frozen_string_literal: true\n\nmodule ::RelayRooms\n  module WrongConstantName\n  end\nend\n" > lib/relay_rooms/helper_thing.rb'
 
 echo
 echo "selftest: $pass caught, $fail missed"
