@@ -142,6 +142,18 @@ run_case "engine-missing-engine-name" \
 run_case "engine-name-not-a-slug" \
   'sed -i "s|^    engine_name \"relay_rooms\"$|    engine_name PLUGIN_NAME|" lib/relay_rooms/engine.rb'
 
+# 20. A bare "#" line in plugin.rb. Plugin::Metadata#parse_line splits it to an
+#     empty list, leaving attribute nil, and calls .strip on it. That runs in
+#     Plugin::Instance.find_all, before any plugin activates, so the whole boot
+#     aborts with a backtrace naming no plugin.
+run_case "bare-hash-line-in-plugin-rb" \
+  'sed -i "s|^# transpile_js: true$|# transpile_js: true\n#|" plugin.rb'
+
+# 21. Same crash via a different line shape: "#:" also splits to nothing, so a
+#     check that only greps for a bare "#" would let this through.
+run_case "colon-only-comment-line" \
+  'sed -i "s|^# transpile_js: true$|# transpile_js: true\n#:|" plugin.rb'
+
 # 19. Serializer moved back into lib/, where it cannot resolve its
 #     Zeitwerk-loaded base class during plugin activation.
 run_case "serializer-in-lib" \

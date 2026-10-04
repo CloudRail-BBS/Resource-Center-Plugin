@@ -1,6 +1,6 @@
 # name: Resource-Center-Plugin
 # about: Display live relay game rooms (联机房) from a CNKD relay API on a Discourse page.
-# version: 1.2.0
+# version: 1.2.1
 # authors: CloudRail BBS
 # url: https://github.com/CloudRail-BBS/Resource-Center-Plugin
 # required_version: 3.2.0
@@ -8,46 +8,39 @@
 
 # frozen_string_literal: true
 
-# PLUGIN_NAME must equal BOTH the `# name:` above AND the installed directory
-# name. This repo's name, its clone directory and this constant are all
-# `Resource-Center-Plugin`, so `git clone <url>` with no target argument produces
-# a correctly-named directory and the three can no longer drift apart.
-#
-# That matters more than it looks, because core keys two different things off two
-# different values:
-#
-#   AdminPluginSerializer#id  ->  directory_name   (the DIRECTORY)
-#   Discourse.plugins_by_name ->  name, plus the directory name as an alias
-#
-# The admin plugin list and `api.setAdminPluginIcon` /
-# `api.addAdminPluginConfigurationNav` all key off the serialized `id`, i.e. the
-# directory. Keeping name == directory removes any chance of registering the
-# admin nav under one and having the page look for the other.
-#
-# PLUGIN_NAME is NOT provided by core. `Plugin::Instance#activate!` runs
-# `instance_eval File.read(path), path`, and nothing in core defines it (grep
-# lib/plugin/instance.rb: zero hits). The official plugin skeleton defines it
-# explicitly. Leave it undefined and `requires_plugin PLUGIN_NAME` raises
-# NameError — and because plugin.rb is evaluated from `config/application.rb`'s
-# body, BEFORE `Rails.application.initialize!`, that NameError is caught by
-# `Plugin.initialization_guard`, which prints "You are unable to start Discourse
-# due to errors in the plugin at <dir>" and calls `exit 1`. That `exit 1` is also
-# what makes the following `rake db:migrate` step fail with Pups::ExecError: the
-# two symptoms are one event.
-#
-# It must be defined BEFORE the engine is required — engine.rb reads PLUGIN_NAME
+# Do not add a line to this file whose stripped content is just "#". Such a line
+# makes Plugin::Metadata#parse_line call .strip on nil and abort the whole boot,
+# before any plugin activates. Only plugin.rb is parsed this way. See README,
+# section "plugin.rb 不能出现裸 # 行", for the mechanism. Official plugins
+# (discourse-solved, discourse-data-explorer, docker_manager) contain zero such
+# lines, which is the convention to follow. Paragraph breaks in this file are
+# therefore written as blank lines, never as "#" rules.
+
+# PLUGIN_NAME must equal both the `# name:` above and the installed directory
+# name; all three are `Resource-Center-Plugin` here, so a plain `git clone` yields
+# a correctly-named directory and they cannot drift apart. That matters because
+# core keys two lookups off two different values: `AdminPluginSerializer#id`
+# returns `directory_name` (the DIRECTORY), which is what the admin plugin list,
+# `api.setAdminPluginIcon` and `api.addAdminPluginConfigurationNav` match against,
+# while `Discourse.plugins_by_name` is keyed by the plugin name and is what
+# `add_admin_route`'s location resolves through.
+# PLUGIN_NAME is not provided by core: `Plugin::Instance#activate!` runs
+# `instance_eval File.read(path), path`, and nothing in lib/plugin/instance.rb
+# defines it. Undefined, `requires_plugin PLUGIN_NAME` raises NameError, which
+# `Plugin.initialization_guard` catches, printing "You are unable to start
+# Discourse due to errors in the plugin at <dir>" and calling `exit 1` -- the same
+# `exit 1` that then fails the following `rake db:migrate` step.
+# It must be defined before the engine is required: engine.rb reads PLUGIN_NAME
 # while its class body is evaluated.
 module ::RelayRooms
   PLUGIN_NAME = "Resource-Center-Plugin"
 end
 
-# lib/ is not autoloaded — these must be required explicitly.
-#
-# Note what is deliberately NOT in this list: the serializer. Anything that
-# subclasses a Zeitwerk-loaded app class (ApplicationSerializer,
-# ApplicationController, …) must not be required here, because plugin activation
-# happens before the autoloader exists. Such files live in app/ and are loaded
-# after boot.
+# lib/ is not autoloaded, so these must be required explicitly. The serializer is
+# deliberately absent: anything subclassing a Zeitwerk-loaded app class
+# (ApplicationSerializer, ApplicationController, ...) cannot be required here,
+# because plugin activation happens before the autoloader exists. Those files live
+# in app/ and load after boot.
 require_relative "lib/relay_rooms/version"
 require_relative "lib/relay_rooms/api_client"
 require_relative "lib/relay_rooms/room_presenter"
@@ -56,21 +49,16 @@ require_relative "lib/relay_rooms/engine"
 
 enabled_site_setting :relay_rooms_enabled
 
-# The plugin serves its own top-level page, so the stylesheet has to be
-# registered explicitly — nothing under assets/stylesheets is auto-included.
+# The plugin serves its own top-level page, so the stylesheet has to be registered
+# explicitly -- nothing under assets/stylesheets is auto-included.
 register_asset "stylesheets/relay-rooms.scss"
 register_asset "stylesheets/relay-rooms-admin.scss", :admin
 
 after_initialize do
-  # Admin plugin page. `use_new_show_route: true` sets `full_location` to
-  # `adminPlugins.show`, a CORE route, so the link on /admin/plugins always
-  # resolves. With `false` it becomes `adminPlugins.<slug>`, which only exists
-  # if the plugin mounts it — and the legacy mount point is dead.
-  #
-  # The location must be the plugin's NAME (its `# name:`, which equals the
-  # installed directory name) — not an arbitrary slug. Core loads the page via
-  # `Discourse.plugins_by_name[params[:plugin_id]]`, so anything else 404s on
-  # /admin/plugins/<location>.json.
+  # `use_new_show_route: true` sets `full_location` to `adminPlugins.show`, a CORE
+  # route, so the link on /admin/plugins always resolves. The location must be the
+  # plugin's name (which equals the directory name), because core loads the page
+  # via `Discourse.plugins_by_name[params[:plugin_id]]`.
   #
   # Referenced through the absolute constant rather than a bare PLUGIN_NAME:
   # plugin.rb is evaluated as a string, so its top-level cref is Object, where a

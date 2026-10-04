@@ -1005,10 +1005,70 @@ def check_lib_filename_constants() -> None:
 
 
 # --------------------------------------------------------------------------
+# 19. plugin.rb must survive Plugin::Metadata#parse_line
+#
+# This does not merely grep for a bare "#" — it replays the parser, because the
+# hazard is any line for which `line[1..-1].split(":")` yields nothing:
+#
+#     attribute, *value = line[1..-1].split(":")
+#     attribute = attribute.strip.gsub(/ /, "_").to_sym
+#
+# With no nil guard, `attribute` being nil raises
+# "NoMethodError: undefined method 'strip' for nil".
+#
+# A bare "#" is the common case, but "#:" and "#::" do it too, and a grep for
+# "#" would miss those. Plugin::Metadata.parse is called from
+# Plugin::Instance.find_all — before ANY plugin is activated — so the whole boot
+# aborts, and the backtrace points at lib/plugin/metadata.rb without naming a
+# plugin, which makes it look like a core bug.
+#
+# Only plugin.rb is parsed this way (Plugin::Instance.parse_from_source does
+# File.read on plugins/*/plugin.rb), so this is scoped to that one file. All three
+# official plugins (discourse-solved, discourse-data-explorer, docker_manager)
+# contain zero bare "#" lines, which is the convention.
+# --------------------------------------------------------------------------
+def ruby_split_colon(text: str) -> list[str]:
+    """Ruby's String#split(":") drops trailing empty fields; Python's does not."""
+    parts = text.split(":")
+    while parts and parts[-1] == "":
+        parts.pop()
+    return parts
+
+
+def check_metadata_parseable() -> None:
+    plugin_rb = ROOT / "plugin.rb"
+    if not plugin_rb.exists():
+        return
+
+    for number, raw in enumerate(plugin_rb.read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.strip()
+
+        # parse_line returns false for the first non-comment, non-blank line,
+        # which stops Plugin::Metadata.parse — later lines are never inspected.
+        if line and not line.startswith("#"):
+            break
+
+        if not line:
+            continue
+
+        if not ruby_split_colon(line[1:]):
+            fail(
+                f'plugin.rb:{number} is "{line}", which makes '
+                "Plugin::Metadata#parse_line call .strip on nil -> "
+                '"NoMethodError: undefined method \'strip\' for nil". That runs '
+                "before any plugin activates, so boot fails with a backtrace naming "
+                "lib/plugin/metadata.rb and no plugin. Delete the line, or give it "
+                "content (e.g. '# ---'). Note '#' alone is not the only trigger: "
+                "'#:' does it too."
+            )
+
+
+# --------------------------------------------------------------------------
 def main() -> int:
     checks = (
         check_plugin_name,
         check_plugin_name_constant,
+        check_metadata_parseable,
         check_requires,
         check_registered_assets,
         check_engine_mount,

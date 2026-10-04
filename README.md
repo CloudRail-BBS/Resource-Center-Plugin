@@ -145,8 +145,8 @@ cd /var/discourse && ./launcher rebuild app
 
 ```bash
 npm install                 # 仅需 content-tag
-python scripts/validate.py  # 18 项静态检查
-bash scripts/selftest.sh    # 证明上述检查确实会失败（20 个注入用例）
+python scripts/validate.py  # 19 项静态检查
+bash scripts/selftest.sh    # 证明上述检查确实会失败（23 个注入用例）
 ruby scripts/test_parsing.rb  # 加载真实实现 + 真实数据验证解析逻辑
 ```
 
@@ -171,9 +171,9 @@ ruby scripts/test_parsing.rb  # 加载真实实现 + 真实数据验证解析逻
 
 `selftest.sh` 会把插件复制到临时目录并逐一注入上述错误，断言 `validate.py` 对**每一个**都报错 —— 只会通过的检查等于没有检查。
 
-## 启动失败的两个陷阱
+## 启动失败的三个陷阱
 
-这两个坑都**不会**在开发环境暴露，只在生产 `./launcher rebuild` 时炸，而且报错信息指向错误的方向。
+这三个坑都**不会**在开发环境暴露，只在生产 `./launcher rebuild` 时炸，而且报错信息指向错误的方向。
 
 ### 1. `PLUGIN_NAME` 不是核心提供的常量
 
@@ -217,6 +217,63 @@ class RoomSerializer < ::ApplicationSerializer
 ```
 
 结论：**序列化器放 `app/serializers/<命名空间>/`**，交给 Zeitwerk 在启动后加载。核心插件都是这么做的（`discourse-solved`、`discourse-data-explorer`）。同理，任何继承 `ApplicationController`、`ActiveRecord::Base` 的文件都必须放 `app/`。
+
+### 3. `plugin.rb` 不能出现裸 `#` 行
+
+这条最阴：报错完全指向核心，不指向你。
+
+`lib/plugin/metadata.rb` 的 `parse_line` **没有 nil 保护**：
+
+```ruby
+def parse_line(line)
+  line = line.strip
+  unless line.empty?
+    return false unless line[0] == "#"
+    attribute, *value = line[1..-1].split(":")
+    value = value.join(":")
+    attribute = attribute.strip.gsub(/ /, "_").to_sym   # ← 就是这行
+  end
+  true
+end
+```
+
+当某行去掉空白后**正好是 `#`** 时：
+
+| 步骤 | 结果 |
+| --- | --- |
+| `"#"[1..-1]` | `""` |
+| `"".split(":")` | `[]`（Ruby 会丢掉尾部空字段） |
+| `attribute, *value = []` | `attribute = nil` |
+| `nil.strip` | **`NoMethodError`** |
+
+后果是 `rake db:migrate` 直接中止：
+
+```
+NoMethodError: undefined method 'strip' for nil (NoMethodError)
+      attribute = attribute.strip.gsub(/ /, "_").to_sym
+/var/www/discourse/lib/plugin/metadata.rb:50:in 'Plugin::Metadata#parse_line'
+/var/www/discourse/lib/plugin/instance.rb:111:in 'Plugin::Instance.parse_from_source'
+/var/www/discourse/lib/plugin/instance.rb:102:in 'block in Plugin::Instance.find_all'
+...
+```
+
+**为什么特别难查**：`Plugin::Metadata.parse` 是在 `Plugin::Instance.find_all` 里调用的，**早于任何插件的激活**。所以堆栈里全是 `lib/plugin/` 和 `config/application.rb`，**一个插件名都没有**，看起来像核心自己的 bug。
+
+几个要点：
+
+- **只有 `plugin.rb` 会被这样解析**（`parse_from_source` 里 `File.read` 的是 `plugins/*/plugin.rb`）。其他 `.rb` 文件里的裸 `#` 是正常 Ruby 注释，无害。
+- **不只是 `#`**：`#:`、`#::` 同样会炸（`":".split(":")` 也是 `[]`）。所以用「grep 裸 `#`」来检查是不够的。
+- **空行是安全的**：`parse_line` 对空行返回 `true`，会继续往下读。
+- **带内容的注释是安全的**：`# ---`、`# (continued)` 都行，因为 `---` 不是已知字段。
+- 三个官方插件（`discourse-solved`、`discourse-data-explorer`、`docker_manager`）里裸 `#` 行数都是 **0**，这就是应当遵循的惯例。
+
+`scripts/validate.py` 里第 19 项检查会**复刻 `parse_line` 的逻辑**（而不是 grep）逐行验证 `plugin.rb`，`scripts/selftest.sh` 也用 `#` 和 `#:` 两种注入证明它确实会失败。
+
+**给其他插件做体检**：
+
+```bash
+grep -rn '^#[[:space:]]*$' /var/discourse/plugins/*/plugin.rb
+```
 
 ## 目录结构
 
