@@ -18,14 +18,33 @@
 - **明暗主题适配** — 全部使用 Discourse 核心色彩变量，跟随配色方案。
 - **无第三方依赖** — 图标为内联 SVG，不依赖 `d-icon` 的版本化路径。
 
-## 安装
+## ⚠️ 安装前必读：本仓库的仓库名与插件名不同
 
-**克隆时务必固定目录名**，目录名必须与 `plugin.rb` 里的 `# name:` 一致：
+| | 值 |
+| --- | --- |
+| Git 仓库名 | `Resource-Center-Plugin` |
+| **插件名（`# name:`）** | **`discourse-relay-rooms`** |
+| **安装目录必须是** | **`discourse-relay-rooms`** |
+
+Discourse 要求**安装目录名与插件名一致**。按仓库名克隆会触发：
+
+```
+Plugin name is 'discourse-relay-rooms', but plugin directory is named 'Resource-Center-Plugin'
+```
+
+后果不是只有一条警告——`add_admin_route(..., "discourse-relay-rooms")` 会因此找不到插件，**管理页 404**，且 `Discourse.plugins_by_name` 查不到该插件。
+
+（本平台已有一个同类案例：`discourse-cnkd-login` 被克隆成了 `CloudRail-CNKD-Log-In`，日志里就在报这条警告。）
+
+**所以克隆时一定要显式指定目标目录名** —— 见下方命令里的第二个参数。
+
+## 安装
 
 ```bash
 cd /var/discourse
 ./launcher enter app
 cd /var/www/discourse/plugins
+#                                     ↓↓↓ 这个参数不能省
 git clone https://github.com/CloudRail-BBS/Resource-Center-Plugin.git discourse-relay-rooms
 exit
 ./launcher rebuild app
@@ -39,7 +58,24 @@ hooks:
     - exec:
         cd: $home/plugins
         cmd:
+          #                                     ↓↓↓ 目录名必须显式指定
           - git clone https://github.com/CloudRail-BBS/Resource-Center-Plugin.git discourse-relay-rooms
+```
+
+### 若目录名已经不匹配
+
+不用重新克隆，改名为插件名即可：
+
+```bash
+mv /var/discourse/plugins/Resource-Center-Plugin \
+   /var/discourse/plugins/discourse-relay-rooms
+```
+
+也可以用 `scripts/diagnose-migrate.sh` 的同类思路本地先查一遍：
+
+```bash
+# 在本仓库根目录执行，确认目录名与 # name: 一致
+python scripts/validate.py
 ```
 
 ### 更新插件
