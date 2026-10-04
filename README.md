@@ -1,4 +1,4 @@
-# discourse-relay-rooms
+# Resource-Center-Plugin
 
 一个 Discourse 插件：在论坛内展示**联机房实时列表**，数据直接来自中继服务器接口。
 
@@ -12,31 +12,36 @@
 - **状态筛选** — 全部 / 等待中 / 游戏中。
 - **复制房间地址** — 一键复制 `www.cnkd.fun/RKCxxx`。
 - **发帖工具栏按钮** — 一键把当前房间列表以 Markdown 表格插入帖子正文。
-- **管理端状态页** — `/admin/plugins/discourse-relay-rooms`，可查看连接状态、节点名称、房间数、数据更新时间，并测试连通性。
+- **管理端状态页** — `/admin/plugins/Resource-Center-Plugin`，可查看连接状态、节点名称、房间数、数据更新时间，并测试连通性。
 - **服务端缓存** — 默认缓存 10 秒，避免每个访客都打到中继服务器；请求带超时。
 - **中英双语** — `zh_CN` 与 `en` 两份完整语言包。
 - **明暗主题适配** — 全部使用 Discourse 核心色彩变量，跟随配色方案。
 - **无第三方依赖** — 图标为内联 SVG，不依赖 `d-icon` 的版本化路径。
 
-## ⚠️ 安装前必读：本仓库的仓库名与插件名不同
+## 命名：仓库名 = 插件名 = 安装目录名
 
 | | 值 |
 | --- | --- |
 | Git 仓库名 | `Resource-Center-Plugin` |
-| **插件名（`# name:`）** | **`discourse-relay-rooms`** |
-| **安装目录必须是** | **`discourse-relay-rooms`** |
+| 插件名（`# name:`） | `Resource-Center-Plugin` |
+| 安装目录名 | `Resource-Center-Plugin` |
 
-Discourse 要求**安装目录名与插件名一致**。按仓库名克隆会触发：
+**三者完全一致**，所以 `git clone` 不带目标目录参数就能得到正确的目录名，不会再出现名字漂移。
+
+Discourse 要求安装目录名与 `# name:` 一致，否则会打印：
 
 ```
-Plugin name is 'discourse-relay-rooms', but plugin directory is named 'Resource-Center-Plugin'
+Plugin name is 'X', but plugin directory is named 'Y'
 ```
 
-后果不是只有一条警告——`add_admin_route(..., "discourse-relay-rooms")` 会因此找不到插件，**管理页 404**，且 `Discourse.plugins_by_name` 查不到该插件。
+更关键的是，核心对**两个不同的值**分别做了索引：
 
-（本平台已有一个同类案例：`discourse-cnkd-login` 被克隆成了 `CloudRail-CNKD-Log-In`，日志里就在报这条警告。）
+| 用途 | 取值 |
+| --- | --- |
+| `AdminPluginSerializer#id`（管理端插件列表、`api.setAdminPluginIcon`、`api.addAdminPluginConfigurationNav`） | **目录名**（`directory_name`） |
+| `Discourse.plugins_by_name[...]`（`add_admin_route` 的 location 查表） | 插件名，并额外把目录名作为别名登记 |
 
-**所以克隆时一定要显式指定目标目录名** —— 见下方命令里的第二个参数。
+也就是说：管理端导航是按**目录名**注册的，而 `add_admin_route` 是按**插件名**查表的。两者不一致时，很容易把管理导航注册到一个名字下、页面却去另一个名字里找。三者统一后这个问题从根上消失了。
 
 ## 安装
 
@@ -44,8 +49,7 @@ Plugin name is 'discourse-relay-rooms', but plugin directory is named 'Resource-
 cd /var/discourse
 ./launcher enter app
 cd /var/www/discourse/plugins
-#                                     ↓↓↓ 这个参数不能省
-git clone https://github.com/CloudRail-BBS/Resource-Center-Plugin.git discourse-relay-rooms
+git clone https://github.com/CloudRail-BBS/Resource-Center-Plugin.git
 exit
 ./launcher rebuild app
 ```
@@ -58,23 +62,24 @@ hooks:
     - exec:
         cd: $home/plugins
         cmd:
-          #                                     ↓↓↓ 目录名必须显式指定
-          - git clone https://github.com/CloudRail-BBS/Resource-Center-Plugin.git discourse-relay-rooms
+          - git clone https://github.com/CloudRail-BBS/Resource-Center-Plugin.git
 ```
 
-### 若目录名已经不匹配
+### 若目录名曾经不匹配
 
-不用重新克隆，改名为插件名即可：
+历史版本叫 `discourse-relay-rooms`。如果服务器上已经装过，改名为仓库名即可：
 
 ```bash
-mv /var/discourse/plugins/Resource-Center-Plugin \
-   /var/discourse/plugins/discourse-relay-rooms
+mv /var/discourse/plugins/discourse-relay-rooms \
+   /var/discourse/plugins/Resource-Center-Plugin
 ```
 
-也可以用 `scripts/diagnose-migrate.sh` 的同类思路本地先查一遍：
+`app.yml` 里 `after_code` 的 `git clone` 目标目录也要一并去掉（或改成新名字），否则下次重建会克隆出第二个目录。
+
+改名后可以先本地确认一遍三者一致：
 
 ```bash
-# 在本仓库根目录执行，确认目录名与 # name: 一致
+# 在本仓库根目录执行；会检查 # name: 与所在目录名是否相同
 python scripts/validate.py
 ```
 
@@ -83,7 +88,7 @@ python scripts/validate.py
 `./launcher rebuild app` **不会拉取新代码** —— `after_code` 里执行的是 `git clone`，目录已存在时克隆直接失败，于是重新编译的仍是旧代码。先 `git pull` 再 rebuild：
 
 ```bash
-cd /var/discourse/plugins/discourse-relay-rooms && git pull
+cd /var/discourse/plugins/Resource-Center-Plugin && git pull
 cd /var/discourse && ./launcher rebuild app
 ```
 
@@ -176,11 +181,13 @@ ruby scripts/test_parsing.rb  # 加载真实实现 + 真实数据验证解析逻
 
 ```ruby
 module ::RelayRooms
-  PLUGIN_NAME = "discourse-relay-rooms"
+  PLUGIN_NAME = "Resource-Center-Plugin"
 end
 
-require_relative "lib/relay_rooms/engine"   # 必须在上面定义之后
+require_relative "lib/relay_rooms/engine"
 ```
+
+顺带一个容易踩的细节：`plugin.rb` 是**字符串求值**的，顶层 cref 是 `Object`。所以在 `plugin.rb` 里裸写 `PLUGIN_NAME` 会去找 `::PLUGIN_NAME` 而不是 `RelayRooms::PLUGIN_NAME`——要写 `::RelayRooms::PLUGIN_NAME`。在 `module ::RelayRooms` 内部（如控制器、engine）裸写才是对的。
 
 漏掉会怎样：`requires_plugin PLUGIN_NAME` 抛 `NameError`。而 `plugin.rb` 是在 `config/application.rb` 里被求值的 —— **早于 `Rails.application.initialize!`** —— 于是这个异常被 `Plugin.initialization_guard` 捕获，打印
 
@@ -214,7 +221,7 @@ class RoomSerializer < ::ApplicationSerializer
 ## 目录结构
 
 ```
-discourse-relay-rooms/
+Resource-Center-Plugin/
 ├── plugin.rb                        # PLUGIN_NAME 定义、元数据、站点设置、资源注册、管理路由
 ├── config/
 │   ├── settings.yml

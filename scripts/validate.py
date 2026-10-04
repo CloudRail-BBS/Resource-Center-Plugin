@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Static checks for the discourse-relay-rooms plugin.
+"""Static checks for the Resource-Center-Plugin plugin.
 
 Every check here is one that has a silent failure mode in Discourse: the plugin
 loads, nothing logs, and the feature just does not work. Everything is proven to
@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-EXPECTED_NAME = "discourse-relay-rooms"
+EXPECTED_NAME = "Resource-Center-Plugin"
 
 failures: list[str] = []
 warnings: list[str] = []
@@ -195,8 +195,15 @@ def check_engine_mount() -> None:
     if not re.search(r'get\s+"/"\s*=>\s*"pages#index"', body):
         fail('config/routes.rb is missing `get "/" => "pages#index"` in the engine')
 
-    # The Engine class must exist and set engine_name (the official skeleton
-    # does). Without it Rails has no engine name to key routes/helpers/assets on.
+    # The Engine must exist and set an engine_name.
+    #
+    # engine_name is `alias :engine_name :railtie_name` in railties, i.e. a
+    # Rails-internal identifier: `mount` derives its default route name from it,
+    # and it identifies the railtie inside Rails. A plugin name that is not a
+    # conventional lowercase slug (uppercase, or containing characters that
+    # cannot appear in a `def`) is therefore NOT safe to hand to engine_name —
+    # `define_method` tolerates it, but any string-eval path would not. Require a
+    # lowercase slug here and let PLUGIN_NAME stay whatever the directory is.
     engine_rb = ROOT / "lib" / "relay_rooms" / "engine.rb"
     if not engine_rb.exists():
         fail("lib/relay_rooms/engine.rb is missing — config/routes.rb references ::RelayRooms::Engine")
@@ -207,12 +214,31 @@ def check_engine_mount() -> None:
     if not re.search(r"<\s*::Rails::Engine", engine_body):
         fail("lib/relay_rooms/engine.rb does not subclass ::Rails::Engine")
 
-    if not re.search(r"engine_name\s+PLUGIN_NAME", engine_body):
+    name_match = re.search(r"engine_name\s+(\"([^\"]+)\"|PLUGIN_NAME)", engine_body)
+    if not name_match:
         fail(
-            "lib/relay_rooms/engine.rb is missing `engine_name PLUGIN_NAME` — the "
-            "official skeleton sets it, and it is resolved during class-body "
-            "evaluation, so PLUGIN_NAME must be defined above the require in plugin.rb"
+            "lib/relay_rooms/engine.rb is missing `engine_name` — without it the "
+            "railtie name defaults to the class name and the mounted route is unnamed"
         )
+    else:
+        literal = name_match.group(2)
+        if literal is None:
+            # `engine_name PLUGIN_NAME` — only safe when the plugin name is itself
+            # a conventional slug.
+            plugin_body = strip_ruby_comments(read(ROOT / "plugin.rb"))
+            plugin_match = re.search(r'PLUGIN_NAME\s*=\s*"([^"]+)"', plugin_body)
+            if plugin_match and not re.fullmatch(r"[a-z0-9_-]+", plugin_match.group(1)):
+                fail(
+                    f"engine_name PLUGIN_NAME with PLUGIN_NAME="
+                    f'"{plugin_match.group(1)}" — engine_name aliases railtie_name, a '
+                    "Rails-internal identifier used for route naming. Use an explicit "
+                    'lowercase slug instead: engine_name "relay_rooms"'
+                )
+        elif not re.fullmatch(r"[a-z0-9_-]+", literal):
+            fail(
+                f'engine_name "{literal}" is not a conventional lowercase slug — '
+                "engine_name aliases railtie_name and is used to derive route names"
+            )
 
     # `config.autoload_paths << lib` (which the skeleton does) is only safe when
     # every lib file's name matches the constant it defines. Guard against the
@@ -838,15 +864,25 @@ def check_plugin_name_constant() -> None:
     if value != EXPECTED_NAME:
         fail(f"PLUGIN_NAME is \"{value}\" but the plugin name is \"{EXPECTED_NAME}\"")
 
-    # It must be defined BEFORE the engine is required: engine.rb resolves
-    # `engine_name PLUGIN_NAME` while its class body is evaluated.
+    # Ordering only matters for files that READ PLUGIN_NAME at class-body
+    # evaluation time (i.e. while plugin.rb is still being loaded). A file that
+    # only uses it inside a method body resolves it at call time, long after
+    # activation, so position is irrelevant there.
     define_at = body.find("PLUGIN_NAME = ")
     require_at = body.find('require_relative "lib/')
-    if define_at != -1 and require_at != -1 and define_at > require_at:
+
+    readers = [
+        relative
+        for relative, text in users
+        if re.search(r"^\s*(?:class|module)\s+\w+.*\n(?:.*\n)*?\s*\w*PLUGIN_NAME", text, re.M)
+        or re.search(r"engine_name\s+PLUGIN_NAME", text)
+    ]
+
+    if readers and define_at != -1 and require_at != -1 and define_at > require_at:
         fail(
-            "PLUGIN_NAME is defined AFTER the first require_relative — engine.rb "
-            "resolves `engine_name PLUGIN_NAME` during class-body evaluation and "
-            "will raise NameError. Move the definition above the requires."
+            "PLUGIN_NAME is defined AFTER the first require_relative, but "
+            f"{', '.join(readers)} reads it during class-body evaluation — that "
+            "raises NameError. Move the definition above the requires."
         )
 
     # A bare PLUGIN_NAME at plugin.rb's top level resolves against Object (the

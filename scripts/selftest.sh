@@ -33,7 +33,7 @@ run_case() {
   local label="$1"; shift
   local mutate="$1"; shift
 
-  local target="$WORK/$label/discourse-relay-rooms"
+  local target="$WORK/$label/Resource-Center-Plugin"
   rm -rf "$WORK/$label"
   copy_plugin "$target"
 
@@ -123,16 +123,24 @@ run_case "gjs-parse-error" \
 #     which prints "You are unable to start Discourse ..." and calls exit 1, so
 #     it also fails the later rake db:migrate step.
 run_case "plugin-name-undefined" \
-  'sed -i "/PLUGIN_NAME = \"discourse-relay-rooms\"/d" plugin.rb'
+  'sed -i "/PLUGIN_NAME = \"Resource-Center-Plugin\"/d" plugin.rb'
 
-# 17. PLUGIN_NAME defined AFTER the requires — engine.rb resolves
-#     `engine_name PLUGIN_NAME` during class-body evaluation, so this raises.
+# 17. PLUGIN_NAME defined AFTER the requires, while a required file reads it at
+#     class-body evaluation time. The reading form is `engine_name PLUGIN_NAME`,
+#     so this mutation switches engine.rb back to that and moves the definition
+#     to the bottom of plugin.rb.
 run_case "plugin-name-defined-late" \
-  'sed -i "/PLUGIN_NAME = \"discourse-relay-rooms\"/d" plugin.rb; printf "\nmodule ::RelayRooms\n  PLUGIN_NAME = \"discourse-relay-rooms\"\nend\n" >> plugin.rb'
+  'sed -i "s|^    engine_name \"relay_rooms\"$|    engine_name PLUGIN_NAME|" lib/relay_rooms/engine.rb; sed -i "/PLUGIN_NAME = \"Resource-Center-Plugin\"/d" plugin.rb; printf "\nmodule ::RelayRooms\n  PLUGIN_NAME = \"Resource-Center-Plugin\"\nend\n" >> plugin.rb'
 
-# 18. Engine missing `engine_name` (the official skeleton sets it)
+# 18. Engine missing `engine_name` entirely
 run_case "engine-missing-engine-name" \
-  'sed -i "s/^    engine_name PLUGIN_NAME$//" lib/relay_rooms/engine.rb'
+  'sed -i "s/^    engine_name \"relay_rooms\"$//" lib/relay_rooms/engine.rb'
+
+# 18b. engine_name handed a name that is not a lowercase slug. engine_name
+#      aliases railtie_name, a Rails-internal identifier used to derive route
+#      names, so a plugin name with uppercase/dashes must not go there.
+run_case "engine-name-not-a-slug" \
+  'sed -i "s|^    engine_name \"relay_rooms\"$|    engine_name PLUGIN_NAME|" lib/relay_rooms/engine.rb'
 
 # 19. Serializer moved back into lib/, where it cannot resolve its
 #     Zeitwerk-loaded base class during plugin activation.

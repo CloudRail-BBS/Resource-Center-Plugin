@@ -1,8 +1,8 @@
 {
-  "name": "discourse-relay-rooms-tools",
+  "name": "Resource-Center-Plugin-tools",
   "private": true,
   "version": "1.0.0",
-  "description": "Local validation tooling for the discourse-relay-rooms plugin.",
+  "description": "Local validation tooling for the Resource-Center-Plugin plugin.",
   "type": "module",
   "scripts": {
     "check:gjs": "node scripts/check-gjs.mjs",
