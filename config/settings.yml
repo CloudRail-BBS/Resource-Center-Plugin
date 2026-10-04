@@ -1,0 +1,37 @@
+plugins:
+  relay_rooms_enabled:
+    default: false
+    client: true
+  relay_rooms_api_url:
+    default: "http://101.43.41.22:46784/relay/rooms"
+    client: false
+  relay_rooms_refresh_seconds:
+    default: 30
+    min: 5
+    max: 600
+    client: true
+  relay_rooms_show_ingame:
+    default: true
+    client: true
+  relay_rooms_join_link_scheme:
+    default: "raw"
+    type: enum
+    choices:
+      - "raw"
+      - "cnkd"
+    client: true
+  relay_rooms_http_timeout:
+    default: 8
+    min: 2
+    max: 30
+    client: false
+  relay_rooms_request_timeout_ms:
+    default: 10000
+    min: 2000
+    max: 60000
+    client: true
+  relay_rooms_cache_seconds:
+    default: 10
+    min: 0
+    max: 300
+    client: false

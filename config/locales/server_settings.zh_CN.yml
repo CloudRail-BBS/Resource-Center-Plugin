@@ -1,0 +1,10 @@
+zh_CN:
+  site_settings:
+    relay_rooms_enabled: "启用联机房页面。"
+    relay_rooms_api_url: "中继服务器房间接口地址，例如 http://101.43.41.22:46784/relay/rooms"
+    relay_rooms_refresh_seconds: "房间列表自动刷新间隔（秒）。"
+    relay_rooms_show_ingame: "在房间列表中显示已开始游戏的房间。"
+    relay_rooms_join_link_scheme: "生成加入链接时使用的协议：raw 使用 http://，cnkd 使用 cnkd:// 以唤起客户端。"
+    relay_rooms_http_timeout: "请求中继接口的超时时间（秒）。"
+    relay_rooms_request_timeout_ms: "前端请求房间列表接口的超时时间（毫秒）。"
+    relay_rooms_cache_seconds: "服务端缓存房间数据的秒数，用于降低对中继服务器压力。"

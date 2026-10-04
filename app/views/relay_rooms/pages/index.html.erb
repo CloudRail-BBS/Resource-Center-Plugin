@@ -1,0 +1,48 @@
+<% content_for :title do %><%= @page_title %> - <%= SiteSetting.title %><% end %>
+
+<div class="relay-rooms-noscript" data-relay-rooms-version="<%= ::RelayRooms::VERSION %>">
+  <h1><%= I18n.t("relay_rooms.page.heading") %></h1>
+
+  <p>
+    <%= I18n.t("relay_rooms.page.description", seconds: SiteSetting.relay_rooms_refresh_seconds) %>
+    <% if @updated_at.present? %>
+      <br><%= I18n.t("relay_rooms.page.last_updated", time: @updated_at) %>
+    <% end %>
+  </p>
+
+  <p><%= @node_name %> — <%= @room_count %></p>
+
+  <% if @rooms.blank? %>
+    <p><%= I18n.t("relay_rooms.page.empty") %></p>
+    <p><%= I18n.t("relay_rooms.page.empty_hint") %></p>
+  <% else %>
+    <table class="relay-rooms-noscript__table">
+      <thead>
+        <tr>
+          <th><%= I18n.t("relay_rooms.table.room") %></th>
+          <th><%= I18n.t("relay_rooms.table.host") %></th>
+          <th><%= I18n.t("relay_rooms.table.map") %></th>
+          <th><%= I18n.t("relay_rooms.table.players") %></th>
+          <th><%= I18n.t("relay_rooms.table.status") %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% @rooms.each do |room| %>
+          <tr>
+            <td>
+              <% if room[:join_url].present? %>
+                <a href="<%= room[:join_url] %>" rel="noopener noreferrer"><%= room[:display_id] %></a>
+              <% else %>
+                <%= room[:display_id] %>
+              <% end %>
+            </td>
+            <td><%= room[:host_name] %></td>
+            <td><%= room[:map_name] %></td>
+            <td><%= room[:active_connection_size] %> / <%= room[:player_size] %></td>
+            <td><%= I18n.t("relay_rooms.status.#{room[:status]}") %></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  <% end %>
+</div>

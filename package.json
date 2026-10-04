@@ -1,0 +1,14 @@
+{
+  "name": "discourse-relay-rooms-tools",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Local validation tooling for the discourse-relay-rooms plugin.",
+  "type": "module",
+  "scripts": {
+    "check:gjs": "node scripts/check-gjs.mjs",
+    "check": "python scripts/validate.py"
+  },
+  "devDependencies": {
+    "content-tag": "^3.1.3"
+  }
+}

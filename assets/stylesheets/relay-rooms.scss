@@ -1,0 +1,320 @@
+// Styles for the relay rooms page.
+//
+// Two rules enforced here on purpose:
+//
+// 1. Every selector is nested under the plugin-unique root `.relay-rooms`.
+//    A stylesheet registered without a scope leaks site-wide, and generic class
+//    names (.no-results, .loading-indicator) can collide with any core or
+//    third-party component.
+// 2. The root itself is qualified as `div.relay-rooms`, and it deliberately
+//    does NOT set `margin: 0 auto` / `max-width` on the unqualified class. A nav
+//    item's `name` is emitted as a CSS class on an <li>, so an unqualified
+//    `.relay-rooms { max-width: 1100px }` would let the nav <li> absorb all the
+//    free space in the header's flex row and stretch the whole navigation bar.
+//
+// Colors use core's color-scheme custom properties so both light and dark
+// schemes work without a per-theme override.
+
+div.relay-rooms {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5em 0 3em;
+}
+
+// The BEM children are deliberately NOT nested under the qualified selector
+// above: they sit on <header>, <h1>, <p>, <ul>… so `div.` on the parent would
+// compile to `div.relay-rooms__header` and silently stop matching. Keeping them
+// in their own unqualified block is what makes this work.
+.relay-rooms {
+  &__header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75em;
+    padding-bottom: 1em;
+    border-bottom: 1px solid var(--primary-low);
+  }
+
+  &__icon {
+    flex: 0 0 auto;
+    margin-top: 0.15em;
+    color: var(--primary-medium);
+  }
+
+  &__header-text {
+    min-width: 0;
+  }
+
+  &__title {
+    margin: 0 0 0.25em;
+    font-size: var(--font-up-3);
+    line-height: 1.25;
+    color: var(--primary);
+  }
+
+  &__description {
+    margin: 0;
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+  }
+
+  &__toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75em;
+    margin: 1em 0;
+  }
+
+  &__filters,
+  &__toolbar-right {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em;
+  }
+
+  &__updated {
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+    white-space: nowrap;
+  }
+
+  &__filter {
+    &.is-active {
+      border-color: var(--tertiary);
+      color: var(--tertiary);
+      background: var(--tertiary-very-low, var(--primary-very-low));
+    }
+  }
+
+  &__refresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+
+    &:disabled {
+      opacity: 0.6;
+    }
+  }
+
+  &__notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6em;
+    margin: 1em 0;
+    padding: 1em 1.25em;
+    border-radius: 6px;
+    background: var(--primary-very-low);
+
+    p {
+      margin: 0.15em 0 0;
+      color: var(--primary-medium);
+      font-size: var(--font-down-1);
+    }
+
+    strong {
+      color: var(--primary);
+    }
+
+    &--error {
+      background: var(--danger-low, var(--primary-very-low));
+      border-left: 3px solid var(--danger, var(--tertiary));
+    }
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__room {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75em 1.25em;
+    padding: 0.85em 1em;
+    border: 1px solid var(--primary-low);
+    border-left-width: 3px;
+    border-radius: 6px;
+    background: var(--secondary);
+
+    &--battleroom {
+      border-left-color: var(--success, var(--tertiary));
+    }
+
+    &--ingame {
+      border-left-color: var(--tertiary);
+    }
+
+    &:hover {
+      background: var(--primary-very-low);
+    }
+  }
+
+  &__room-main {
+    flex: 1 1 12em;
+    min-width: 0;
+  }
+
+  &__room-id {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+  }
+
+  &__room-code {
+    font-weight: 700;
+    font-size: var(--font-up-1);
+    color: var(--primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__room-host {
+    display: flex;
+    align-items: center;
+    gap: 0.35em;
+    margin-top: 0.25em;
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+    word-break: break-word;
+  }
+
+  &__room-details {
+    flex: 2 1 20em;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35em 1em;
+    min-width: 0;
+  }
+
+  &__detail {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    color: var(--primary-high);
+    font-size: var(--font-down-1);
+    min-width: 0;
+
+    &--muted {
+      color: var(--primary-medium);
+    }
+  }
+
+  &__map-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 18em;
+  }
+
+  &__badges {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.3em;
+  }
+
+  &__badge {
+    padding: 0.1em 0.45em;
+    border-radius: 4px;
+    background: var(--primary-low);
+    color: var(--primary-high);
+    font-size: var(--font-down-2);
+    white-space: nowrap;
+
+    &--muted {
+      background: var(--primary-very-low);
+      color: var(--primary-medium);
+    }
+  }
+
+  &__status {
+    padding: 0.1em 0.5em;
+    border-radius: 4px;
+    font-size: var(--font-down-2);
+    white-space: nowrap;
+
+    &--battleroom {
+      background: var(--success-low, var(--primary-low));
+      color: var(--success, var(--primary));
+    }
+
+    &--ingame {
+      background: var(--tertiary-low, var(--primary-low));
+      color: var(--tertiary);
+    }
+
+    &--closed,
+    &--unknown {
+      background: var(--primary-low);
+      color: var(--primary-medium);
+    }
+  }
+
+  &__room-actions {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-left: auto;
+  }
+
+  &__join,
+  &__room-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+  }
+}
+
+// The noscript / crawler shell lives outside the Ember app, so it cannot be
+// nested under `div.relay-rooms` — it carries its own BEM root instead.
+.relay-rooms-noscript {
+  max-width: 1100px;
+  margin: 0 auto;
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+
+    th,
+    td {
+      padding: 0.5em 0.75em;
+      border-bottom: 1px solid var(--primary-low);
+      text-align: left;
+    }
+  }
+}
+
+@media (max-width: 767px) {
+  .relay-rooms {
+    &__room {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    &__room-actions {
+      margin-left: 0;
+
+      .btn,
+      .relay-rooms__join {
+        flex: 1 1 auto;
+        justify-content: center;
+      }
+    }
+
+    &__map-name {
+      max-width: 100%;
+      white-space: normal;
+    }
+
+    &__updated {
+      white-space: normal;
+    }
+  }
+}

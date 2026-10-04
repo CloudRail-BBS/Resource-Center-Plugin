@@ -1,0 +1,10 @@
+en:
+  site_settings:
+    relay_rooms_enabled: "Enable the relay rooms page."
+    relay_rooms_api_url: "Relay server room endpoint, e.g. http://101.43.41.22:46784/relay/rooms"
+    relay_rooms_refresh_seconds: "How often the room list refreshes, in seconds."
+    relay_rooms_show_ingame: "Show rooms whose game has already started."
+    relay_rooms_join_link_scheme: "Scheme used for join links: raw uses http://, cnkd uses cnkd:// to launch the client."
+    relay_rooms_http_timeout: "Timeout for requests to the relay endpoint, in seconds."
+    relay_rooms_request_timeout_ms: "Timeout for the browser's room list request, in milliseconds."
+    relay_rooms_cache_seconds: "How long the server caches room data, in seconds, to lower load on the relay server."

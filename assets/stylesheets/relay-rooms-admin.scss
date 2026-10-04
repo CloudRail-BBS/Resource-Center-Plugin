@@ -1,0 +1,75 @@
+// Admin-only styles.
+//
+// Registered with the `:admin` target, which is what puts the file in the admin
+// app bundle. This only works because the component it styles lives under
+// admin/assets/javascripts/** — a component under assets/javascripts/ is in the
+// main bundle and its styles CANNOT be admin-scoped.
+//
+// Scoped under the plugin-unique `.relay-rooms-status` root so nothing leaks.
+
+.relay-rooms-status {
+  &__notice {
+    margin: 0 0 1em;
+    padding: 0.85em 1em;
+    border-radius: 6px;
+    background: var(--primary-very-low);
+    color: var(--primary-high);
+
+    &--warn {
+      background: var(--danger-low, var(--primary-low));
+      border-left: 3px solid var(--danger, var(--tertiary));
+    }
+  }
+
+  &__grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    margin-bottom: 1.25em;
+  }
+
+  &__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.5em 1em;
+    padding-bottom: 0.5em;
+    border-bottom: 1px solid var(--primary-low);
+  }
+
+  &__label {
+    flex: 0 0 12em;
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+  }
+
+  &__value {
+    flex: 1 1 auto;
+    color: var(--primary);
+    word-break: break-word;
+
+    &--ok {
+      color: var(--success, var(--tertiary));
+      font-weight: 600;
+    }
+
+    &--error {
+      color: var(--danger, var(--tertiary));
+      font-weight: 600;
+    }
+
+    &--mono {
+      font-family: var(--d-font-family--monospace, monospace);
+      font-size: var(--font-down-1);
+    }
+  }
+
+  &__actions {
+    margin-bottom: 1em;
+  }
+
+  &__hint {
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+  }
+}

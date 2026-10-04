@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+
+package-lock.json -diff linguist-generated
+node_modules/ export-ignore
+rooms_sample.json export-ignore
+core-tree.txt export-ignore
