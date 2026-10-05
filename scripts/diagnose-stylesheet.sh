@@ -6,7 +6,10 @@
 # was never written -- the compile either raised or never ran. Either way the
 # build log says which, and this prints the lines that matter.
 #
-# Usage:  bash scripts/diagnose-stylesheet.sh [forum-url] [/var/discourse]
+# Usage:  bash scripts/diagnose-stylesheet.sh [forum-url] [host-discourse-dir]
+#
+# The host directory differs per install (/var/discourse, /data/discourse, ...).
+# Pass yours as the second argument; it defaults to /var/discourse.
 #
 # Run it from anywhere; it only reads.
 
@@ -19,6 +22,7 @@ DOCKER_ROOT="${2:-/var/discourse}"
 
 echo "plugin directory name: $PLUGIN_NAME"
 echo "target name:           $PLUGIN_NAME   (and ${PLUGIN_NAME}_admin)"
+echo "host discourse dir:    $DOCKER_ROOT"
 echo
 
 # --------------------------------------------------------------------------
@@ -133,13 +137,17 @@ sed "s/__PLUGIN_NAME__/${PLUGIN_NAME}/g" <<'CONSOLE'
   both rescues and prints the real error -- and usually fixes the page outright,
   because it writes the cache row the build failed to write.
 
-  ONE command, from the host:
+  ONE command, from the host. Substitute YOUR docker_manager directory --
+  /var/discourse is only the common default; some installs use /data/discourse:
 
-      cd /var/discourse && ./launcher run app "cd /var/www/discourse && bash plugins/__PLUGIN_NAME__/scripts/recompile-stylesheets.sh"
+      cd /data/discourse && ./launcher run app "cd /var/www/discourse && bash plugins/__PLUGIN_NAME__/scripts/recompile-stylesheets.sh"
+
+  Note the two paths differ on purpose: the host directory varies, but the path
+  INSIDE the container is always /var/www/discourse.
 
   That script also works from inside the container:
 
-      cd /var/discourse && ./launcher enter app
+      cd /data/discourse && ./launcher enter app
       cd /var/www/discourse && bash plugins/__PLUGIN_NAME__/scripts/recompile-stylesheets.sh
 
   Do NOT paste the Ruby into bash -- `Builder.new(target: ...)` is Ruby, and bash

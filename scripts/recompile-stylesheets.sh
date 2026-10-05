@@ -2,13 +2,17 @@
 # Recompiles this plugin's stylesheets through Discourse's real pipeline, and
 # reports what the cache ends up holding.
 #
-# ONE COMMAND, from the host:
+# ONE COMMAND, from the host — substitute your own docker_manager directory:
 #
 #     cd /var/discourse && ./launcher run app "cd /var/www/discourse && bash plugins/<plugin-dir>/scripts/recompile-stylesheets.sh"
 #
+# The host directory varies by install (`/var/discourse`, `/data/discourse`, …).
+# The path INSIDE the container does not: it is always /var/www/discourse. Only
+# the leading `cd` changes.
+#
 # Or if you prefer to be inside the container already:
 #
-#     cd /var/discourse && ./launcher enter app
+#     cd <your-discourse-dir> && ./launcher enter app
 #     cd /var/www/discourse && bash plugins/<plugin-dir>/scripts/recompile-stylesheets.sh
 #
 # Why a script instead of an inline command: the Ruby has to run inside the
@@ -54,7 +58,14 @@ fi
 # this same file is already visible inside at $INNER_ROOT/$RUNNER_REL.
 # --------------------------------------------------------------------------
 LAUNCHER=""
-for candidate in "./launcher" "/var/discourse/launcher" "$(dirname "$PLUGIN_DIR")/../launcher"; do
+# The host directory differs per install — /var/discourse is only the common
+# default. Look in the usual places, then next to this plugin.
+for candidate in \
+  "./launcher" \
+  "/var/discourse/launcher" \
+  "/data/discourse/launcher" \
+  "$(dirname "$(dirname "$(dirname "$PLUGIN_DIR")")")/launcher"
+do
   if [ -x "$candidate" ]; then
     LAUNCHER="$candidate"
     break
@@ -63,7 +74,9 @@ done
 
 if [ -z "$LAUNCHER" ]; then
   echo "Not inside the container, and no ./launcher found." >&2
-  echo "Run it from /var/discourse, or copy the command from the header of this file." >&2
+  echo "Run this from your docker_manager directory, e.g.:" >&2
+  echo "    cd /data/discourse && ./launcher run app \"cd $INNER_ROOT && bash $RUNNER_REL\"" >&2
+  echo "or copy that command from the header of this file." >&2
   exit 1
 fi
 
