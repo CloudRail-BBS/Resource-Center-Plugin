@@ -116,35 +116,40 @@ echo "  and uses the same dart-sass, so a failure here is a failure there."
 
 echo
 echo "=== THE DECISIVE STEP: compile the target where nothing is swallowed ==="
-cat <<'CONSOLE'
-  During a rebuild, two failures are silent by design:
+# Quoted heredoc delimiter: without it bash expands the backticks and $ in this
+# text as command substitution and variables, which silently mangles the output.
+# The plugin name is substituted afterwards instead.
+sed "s/__PLUGIN_NAME__/${PLUGIN_NAME}/g" <<'CONSOLE'
+  During a rebuild, two failures here are silent by design:
 
     - Builder#compile wraps StylesheetCache.add in a bare `rescue` and only
       writes `Rails.logger.warn "Completely unexpected error adding item to
       cache ..."`. The build still reports success.
-    - The assets:precompile rake task rescues NoMethodError (among others) and
-      prints "Skipping precompilation of CSS cause schema is old".
+    - The assets:precompile rake task rescues NoMethodError and prints
+      "Skipping precompilation of CSS cause schema is old", aborting the rest of
+      the CSS precompile while still exiting 0.
 
-  Both leave the <link> in place with no file behind it. Running the compile by
-  hand skips both rescues and prints the real error -- and may simply fix it, by
-  writing the cache row the build failed to write.
+  Both leave the <link> in place with no file behind it. Compiling by hand skips
+  both rescues and prints the real error -- and usually fixes the page outright,
+  because it writes the cache row the build failed to write.
 
-  Run this (it also re-caches the stylesheet, so the page may start working
-  immediately afterwards):
+  ONE command, from the host:
 
-      cd /var/discourse
-      ./launcher run app "cd /var/www/discourse && bundle exec rails runner 'Stylesheet::Manager::Builder.new(target: \"<TARGET>\", manager: nil).compile(force: true)'"
+      cd /var/discourse && ./launcher run app "cd /var/www/discourse && bash plugins/__PLUGIN_NAME__/scripts/recompile-stylesheets.sh"
 
-  Substitute <TARGET> with the plugin directory name, then repeat with
-  <TARGET>_admin. Or interactively:
+  That script also works from inside the container:
 
-      ./launcher enter app
-      cd /var/www/discourse && bundle exec rails c
-      > Stylesheet::Manager::Builder.new(target: "Resource-Center-Plugin", manager: nil).compile(force: true)
-      > Stylesheet::Manager::Builder.new(target: "Resource-Center-Plugin_admin", manager: nil).compile(force: true)
-      > StylesheetCache.where(target: "Resource-Center-Plugin").count   # expect 1+
+      cd /var/discourse && ./launcher enter app
+      cd /var/www/discourse && bash plugins/__PLUGIN_NAME__/scripts/recompile-stylesheets.sh
 
-  A row count of 0 after a successful compile means add() raised and the
-  warning above is the only trace of it -- check the Rails log for
-  "Completely unexpected error adding item to cache".
+  Do NOT paste the Ruby into bash -- `Builder.new(target: ...)` is Ruby, and bash
+  reports "syntax error near unexpected token `target:'". The script exists so
+  there is no inline Ruby to quote.
+
+  What to look for in its output:
+    - `compile : FAILED` -> that is the cause; send the error and backtrace.
+    - `compile : ok` but `cache rows after : 0` -> add() raised and the only trace
+      is a warn-level line. Search the Rails log for
+      "Completely unexpected error adding item to cache".
+    - Both targets `present` for the expected digest -> hard-reload the page.
 CONSOLE
