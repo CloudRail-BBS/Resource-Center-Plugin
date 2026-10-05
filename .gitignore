@@ -12,3 +12,6 @@ rooms_sample.json
 .bundle/
 tmp/
 *.gem
+
+# Local scratch (e.g. commit message files used with git commit -F)
+*.tmp
