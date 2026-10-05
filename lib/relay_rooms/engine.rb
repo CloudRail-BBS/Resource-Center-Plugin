@@ -15,15 +15,17 @@ module ::RelayRooms
   #     ("the :as option given to mount takes the engine_name as default"), and
   #   * railtie_name is used to identify the railtie inside Rails.
   #
-  # This plugin's name is `Resource-Center-Plugin` — uppercase and dashed. Ruby
-  # tolerates it via `define_method` (which is what modern Rails uses to build
-  # URL helpers), but `def Resource-Center-Plugin` is a syntax error, so any
-  # code path that string-evals the name would break. Setting a conventional
-  # lowercase slug removes that entire class of risk, and nothing in this plugin
-  # depends on engine_name matching the plugin name: the engine is mounted at an
-  # explicit `at:`, its namespace comes from `isolate_namespace` (the MODULE, not
-  # the engine name), and Discourse's plugin asset lookup uses the plugin
-  # DIRECTORY via `DiscoursePluginRegistry.stylesheets_exists?(directory_name)`.
+  # `engine_name` is set to a lowercase slug rather than PLUGIN_NAME.
+  #
+  # PLUGIN_NAME happens to be lowercase here (it must be — see plugin.rb), so
+  # `engine_name PLUGIN_NAME` would work today. Setting the slug explicitly keeps
+  # the Rails-internal identifier independent of a user-facing name: `engine_name`
+  # is not a label, it is `railtie_name`, which `mount` derives a default route
+  # name from and which identifies the railtie inside Rails. Nothing depends on
+  # the two matching — the engine is mounted at an explicit `at:`, its namespace
+  # comes from `isolate_namespace` (the MODULE, not the engine name), and
+  # Discourse's plugin asset lookup uses the plugin DIRECTORY via
+  # `DiscoursePluginRegistry.stylesheets_exists?(directory_name)`.
   #
   # Rails documents overriding it directly (engine.rb: `engine_name "my_engine"`),
   # so this is the supported mechanism, not a workaround.

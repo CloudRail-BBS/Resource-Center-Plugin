@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Static checks for the Resource-Center-Plugin plugin.
+"""Static checks for the relay rooms plugin.
+
+The repo is named Resource-Center-Plugin; the plugin and its directory are
+`resource-center-plugin`. Lowercase is required, not cosmetic -- see
+check_plugin_name_charset for why an uppercase directory loses its stylesheet
+entirely.
 
 Every check here is one that has a silent failure mode in Discourse: the plugin
 loads, nothing logs, and the feature just does not work. Everything is proven to
@@ -20,7 +25,7 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-EXPECTED_NAME = "Resource-Center-Plugin"
+EXPECTED_NAME = "resource-center-plugin"
 
 failures: list[str] = []
 warnings: list[str] = []
@@ -95,6 +100,69 @@ def check_plugin_name() -> None:
     for field in ("about", "version", "authors", "url"):
         if not re.search(rf"^#\s*{field}:", source, re.M):
             fail(f"plugin.rb metadata is missing '# {field}:'")
+
+
+# --------------------------------------------------------------------------
+# 1b. The plugin name and directory must be lowercase
+#
+# This is the single highest-value check here, because the failure is invisible
+# everywhere except the browser.
+#
+# Core's stylesheet route constrains the name to lowercase:
+#
+#     # config/routes.rb
+#     get "stylesheets/:name" => "stylesheets#show",
+#         constraints: { name: /[-a-z0-9_]+/, format: "css" }, format: true
+#
+# The <link> Discourse emits uses the plugin DIRECTORY name. With a directory
+# named `Resource-Center-Plugin` the URL is
+# /stylesheets/Resource-Center-Plugin_<digest>.css, the constraint does not match,
+# the route never matches, and the request 404s.
+#
+# What makes it so hard to find is that everything else is correct: the compile
+# succeeds, the stylesheet_cache row exists with the exact requested digest, the
+# <link> is emitted, and every other plugin serves fine. The controller is simply
+# never reached, so nothing logs and nothing in the app points at the name. The
+# only symptom is a completely unstyled page -- default <ul> bullets and
+# browser-default buttons -- and a console message about MIME type text/html.
+# --------------------------------------------------------------------------
+PLUGIN_NAME_CHARSET = re.compile(r"\A[-a-z0-9_]+\Z")
+
+
+def check_plugin_name_charset() -> None:
+    # The directory name is what ends up in the stylesheet URL.
+    if not PLUGIN_NAME_CHARSET.match(ROOT.name):
+        offenders = sorted({c for c in ROOT.name if not re.match(r"[-a-z0-9_]", c)})
+        fail(
+            f"the plugin directory is named '{ROOT.name}', which is not lowercase. "
+            f"Offending characters: {', '.join(repr(c) for c in offenders)}. "
+            "Discourse's stylesheet route constrains :name to /[-a-z0-9_]+/, so the "
+            "<link> it emits for this plugin will never match a route and the "
+            "stylesheet 404s — leaving the page unstyled while the compile, the "
+            "cache row and every other plugin look perfectly healthy. Rename the "
+            "directory (and '# name:') to lowercase."
+        )
+
+    # The `# name:` is compared against the directory by check_plugin_name, so a
+    # lowercase directory already implies a lowercase name. Still worth checking
+    # directly, since the two can be edited independently.
+    plugin_rb = ROOT / "plugin.rb"
+    if not plugin_rb.exists():
+        return
+
+    for line in plugin_rb.read_text(encoding="utf-8").splitlines():
+        if line.strip() and not line.startswith("#"):
+            break
+        match = re.match(r"#\s*name:\s*(.+)", line)
+        if match:
+            name = match.group(1).strip()
+            if not PLUGIN_NAME_CHARSET.match(name):
+                fail(
+                    f"plugin.rb '# name: {name}' is not lowercase; the directory "
+                    "name (which becomes the stylesheet URL) must also be, or the "
+                    "plugin's CSS 404s"
+                )
+            break
 
 
 # --------------------------------------------------------------------------
@@ -1433,6 +1501,7 @@ def check_scss_compiles() -> None:
 def main() -> int:
     checks = (
         check_plugin_name,
+        check_plugin_name_charset,
         check_plugin_name_constant,
         check_metadata_parseable,
         check_requires,

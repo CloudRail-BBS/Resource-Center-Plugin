@@ -33,7 +33,7 @@ run_case() {
   local label="$1"; shift
   local mutate="$1"; shift
 
-  local target="$WORK/$label/Resource-Center-Plugin"
+  local target="$WORK/$label/resource-center-plugin"
   rm -rf "$WORK/$label"
   copy_plugin "$target"
 
@@ -123,14 +123,14 @@ run_case "gjs-parse-error" \
 #     which prints "You are unable to start Discourse ..." and calls exit 1, so
 #     it also fails the later rake db:migrate step.
 run_case "plugin-name-undefined" \
-  'sed -i "/PLUGIN_NAME = \"Resource-Center-Plugin\"/d" plugin.rb'
+  'sed -i "/PLUGIN_NAME = \"resource-center-plugin\"/d" plugin.rb'
 
 # 17. PLUGIN_NAME defined AFTER the requires, while a required file reads it at
 #     class-body evaluation time. The reading form is `engine_name PLUGIN_NAME`,
 #     so this mutation switches engine.rb back to that and moves the definition
 #     to the bottom of plugin.rb.
 run_case "plugin-name-defined-late" \
-  'sed -i "s|^    engine_name \"relay_rooms\"$|    engine_name PLUGIN_NAME|" lib/relay_rooms/engine.rb; sed -i "/PLUGIN_NAME = \"Resource-Center-Plugin\"/d" plugin.rb; printf "\nmodule ::RelayRooms\n  PLUGIN_NAME = \"Resource-Center-Plugin\"\nend\n" >> plugin.rb'
+  'sed -i "s|^    engine_name \"relay_rooms\"$|    engine_name PLUGIN_NAME|" lib/relay_rooms/engine.rb; sed -i "/PLUGIN_NAME = \"resource-center-plugin\"/d" plugin.rb; printf "\nmodule ::RelayRooms\n  PLUGIN_NAME = \"resource-center-plugin\"\nend\n" >> plugin.rb'
 
 # 18. Engine missing `engine_name` entirely
 run_case "engine-missing-engine-name" \
@@ -138,9 +138,14 @@ run_case "engine-missing-engine-name" \
 
 # 18b. engine_name handed a name that is not a lowercase slug. engine_name
 #      aliases railtie_name, a Rails-internal identifier used to derive route
-#      names, so a plugin name with uppercase/dashes must not go there.
+#      names, so an uppercase/dashed value must not go there.
+#
+#      The mutation sets a literal rather than `engine_name PLUGIN_NAME` on
+#      purpose: PLUGIN_NAME is lowercase now (it must be — see the
+#      uppercase-directory case), so `engine_name PLUGIN_NAME` is genuinely safe
+#      and asserting on it would be asserting on a non-defect.
 run_case "engine-name-not-a-slug" \
-  'sed -i "s|^    engine_name \"relay_rooms\"$|    engine_name PLUGIN_NAME|" lib/relay_rooms/engine.rb'
+  'sed -i "s|^    engine_name \"relay_rooms\"$|    engine_name \"Resource-Center-Plugin\"|" lib/relay_rooms/engine.rb'
 
 # 20. A bare "#" line in plugin.rb. Plugin::Metadata#parse_line splits it to an
 #     empty list, leaving attribute nil, and calls .strip on it. That runs in
@@ -187,6 +192,30 @@ run_case "serializer-in-lib" \
 #     path — Zeitwerk::NameError on eager load.
 run_case "lib-autoloaded-constant-mismatch" \
   'sed -i "s|^    isolate_namespace RelayRooms$|    isolate_namespace RelayRooms\n    config.autoload_paths << File.join(config.root, \"lib\")|" lib/relay_rooms/engine.rb; printf "# frozen_string_literal: true\n\nmodule ::RelayRooms\n  module WrongConstantName\n  end\nend\n" > lib/relay_rooms/helper_thing.rb'
+
+# 26. Uppercase plugin directory.
+#
+#     Core's stylesheet route constrains :name to /[-a-z0-9_]+/, so the <link>
+#     Discourse emits for an uppercase directory never matches a route and the CSS
+#     404s — while the compile succeeds, the cache row is present with the exact
+#     requested digest, and every other plugin serves fine. The only symptom is a
+#     completely unstyled page.
+#
+#     The `# name:` is edited to match the directory, so check_plugin_name passes
+#     and only the charset check can fire — otherwise this would be caught for the
+#     wrong reason.
+rm -rf "$WORK/uppercase-dir"
+copy_plugin "$WORK/uppercase-dir/Resource-Center-Plugin"
+if ( cd "$WORK/uppercase-dir/Resource-Center-Plugin" \
+      && sed -i 's/^# name: .*/# name: Resource-Center-Plugin/' plugin.rb \
+      && "$PY" scripts/validate.py ) >"$WORK/uppercase.log" 2>&1; then
+  echo "SELFTEST FAIL  uppercase-directory — validate.py reported OK"
+  sed 's/^/               /' "$WORK/uppercase.log"
+  fail=$((fail + 1))
+else
+  echo "SELFTEST OK    uppercase-directory — caught"
+  pass=$((pass + 1))
+fi
 
 echo
 echo "selftest: $pass caught, $fail missed"

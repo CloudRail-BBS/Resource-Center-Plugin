@@ -1,6 +1,6 @@
-# name: Resource-Center-Plugin
+# name: resource-center-plugin
 # about: Display live relay game rooms (联机房) from a CNKD relay API on a Discourse page.
-# version: 1.2.1
+# version: 1.3.0
 # authors: CloudRail BBS
 # url: https://github.com/CloudRail-BBS/Resource-Center-Plugin
 # required_version: 3.2.0
@@ -8,6 +8,21 @@
 
 # frozen_string_literal: true
 
+# THE NAME AND DIRECTORY MUST BE LOWERCASE.
+# Not a style preference — core's stylesheet route constrains the name to
+# lowercase, so an uppercase directory silently loses its CSS:
+#     # config/routes.rb
+#     get "stylesheets/:name" => "stylesheets#show",
+#         constraints: { name: /[-a-z0-9_]+/, format: "css" }, format: true
+# With a directory named `Resource-Center-Plugin`, the emitted <link> points at
+# /stylesheets/Resource-Center-Plugin_<digest>.css, that constraint does not
+# match, the route never matches, and the request 404s. The controller is never
+# reached — so the stylesheet cache is populated correctly, the compile succeeds,
+# and every plugin beside it serves fine. The page renders completely unstyled,
+# with default <ul> bullets and browser-default buttons, and the browser console
+# reports "MIME type ('text/html') is not a supported stylesheet MIME type".
+# The repo is named `Resource-Center-Plugin`; the plugin and its directory are
+# `resource-center-plugin`. Clone with an explicit target, or rename the repo.
 # Do not add a line to this file whose stripped content is just "#". Such a line
 # makes Plugin::Metadata#parse_line call .strip on nil and abort the whole boot,
 # before any plugin activates. Only plugin.rb is parsed this way. See README,
@@ -17,10 +32,9 @@
 # therefore written as blank lines, never as "#" rules.
 
 # PLUGIN_NAME must equal both the `# name:` above and the installed directory
-# name; all three are `Resource-Center-Plugin` here, so a plain `git clone` yields
-# a correctly-named directory and they cannot drift apart. That matters because
-# core keys two lookups off two different values: `AdminPluginSerializer#id`
-# returns `directory_name` (the DIRECTORY), which is what the admin plugin list,
+# name; all three are `resource-center-plugin` here. That matters because core
+# keys two lookups off two different values: `AdminPluginSerializer#id` returns
+# `directory_name` (the DIRECTORY), which is what the admin plugin list,
 # `api.setAdminPluginIcon` and `api.addAdminPluginConfigurationNav` match against,
 # while `Discourse.plugins_by_name` is keyed by the plugin name and is what
 # `add_admin_route`'s location resolves through.
@@ -33,7 +47,7 @@
 # It must be defined before the engine is required: engine.rb reads PLUGIN_NAME
 # while its class body is evaluated.
 module ::RelayRooms
-  PLUGIN_NAME = "Resource-Center-Plugin"
+  PLUGIN_NAME = "resource-center-plugin"
 end
 
 # lib/ is not autoloaded, so these must be required explicitly. The serializer is

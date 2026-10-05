@@ -1,4 +1,6 @@
-# Resource-Center-Plugin
+# 联机房插件 · `resource-center-plugin`
+
+（Git 仓库名为 `Resource-Center-Plugin`，安装目录名必须是 `resource-center-plugin` —— 见下方「命名」。）
 
 一个 Discourse 插件：在论坛内展示**联机房实时列表**，数据直接来自中继服务器接口。
 
@@ -12,44 +14,68 @@
 - **状态筛选** — 全部 / 等待中 / 游戏中。
 - **复制房间地址** — 一键复制 `www.cnkd.fun/RKCxxx`。
 - **发帖工具栏按钮** — 一键把当前房间列表以 Markdown 表格插入帖子正文。
-- **管理端状态页** — `/admin/plugins/Resource-Center-Plugin`，可查看连接状态、节点名称、房间数、数据更新时间，并测试连通性。
+- **管理端状态页** — `/admin/plugins/resource-center-plugin`，可查看连接状态、节点名称、房间数、数据更新时间，并测试连通性。
 - **服务端缓存** — 默认缓存 10 秒，避免每个访客都打到中继服务器；请求带超时。
 - **中英双语** — `zh_CN` 与 `en` 两份完整语言包。
 - **明暗主题适配** — 全部使用 Discourse 核心色彩变量，跟随配色方案。
 - **无第三方依赖** — 图标为内联 SVG，不依赖 `d-icon` 的版本化路径。
 
-## 命名：仓库名 = 插件名 = 安装目录名
+## 命名：安装目录必须是全小写
 
 | | 值 |
 | --- | --- |
 | Git 仓库名 | `Resource-Center-Plugin` |
-| 插件名（`# name:`） | `Resource-Center-Plugin` |
-| 安装目录名 | `Resource-Center-Plugin` |
+| **插件名（`# name:`）** | **`resource-center-plugin`** |
+| **安装目录名** | **`resource-center-plugin`** |
 
-**三者完全一致**，所以 `git clone` 不带目标目录参数就能得到正确的目录名，不会再出现名字漂移。
+### ⚠️ 大写目录名会让整个样式表 404（这不是风格偏好）
 
-Discourse 要求安装目录名与 `# name:` 一致，否则会打印：
+核心的样式表路由把名字限制成小写：
+
+```ruby
+# config/routes.rb
+get "stylesheets/:name" => "stylesheets#show",
+    constraints: { name: /[-a-z0-9_]+/, format: "css" }, format: true
+```
+
+Discourse 输出的 `<link>` 用的是**插件目录名**。目录叫 `Resource-Center-Plugin` 时：
+
+- URL 是 `/stylesheets/Resource-Center-Plugin_<digest>.css`
+- 该约束**不匹配** → 路由不匹配 → **404**
+- 浏览器报 `MIME type ('text/html') is not a supported stylesheet MIME type`
+- 页面**完全没有样式**（列表项前面还有默认的 `•`，按钮是浏览器默认灰色）
+
+**最坑的地方是其它一切看起来都正常**：编译成功、`stylesheet_cache` 里有 digest 完全正确的行、`<link>` 照常输出、同站其它 26 个插件样式表全是 200。**控制器从未被调用**，所以日志里什么都没有，应用内也没有任何指向名字的线索。
+
+**仓库名带大写，插件名和目录名不带。** 克隆时必须显式指定目录名，或把仓库改名成小写。
+
+### 目录名与 `# name:` 必须一致
+
+不一致会打印：
 
 ```
 Plugin name is 'X', but plugin directory is named 'Y'
 ```
 
-更关键的是，核心对**两个不同的值**分别做了索引：
+而且核心对**两个不同的值**分别索引：
 
 | 用途 | 取值 |
 | --- | --- |
 | `AdminPluginSerializer#id`（管理端插件列表、`api.setAdminPluginIcon`、`api.addAdminPluginConfigurationNav`） | **目录名**（`directory_name`） |
 | `Discourse.plugins_by_name[...]`（`add_admin_route` 的 location 查表） | 插件名，并额外把目录名作为别名登记 |
 
-也就是说：管理端导航是按**目录名**注册的，而 `add_admin_route` 是按**插件名**查表的。两者不一致时，很容易把管理导航注册到一个名字下、页面却去另一个名字里找。三者统一后这个问题从根上消失了。
+所以管理端导航是按**目录名**注册的，而 `add_admin_route` 是按**插件名**查表。两者一致才不会有"导航注册到一个名字、页面去另一个名字找"的问题。
+
+`scripts/validate.py` 第 1b 项会检查目录名与 `# name:` 都匹配 `/[-a-z0-9_]+/`。
 
 ## 安装
 
 ```bash
-cd /var/discourse
+cd /data/discourse
 ./launcher enter app
 cd /var/www/discourse/plugins
-git clone https://github.com/CloudRail-BBS/Resource-Center-Plugin.git
+#                                     ↓↓↓ 小写目录名，这个参数不能省
+git clone https://github.com/CloudRail-BBS/Resource-Center-Plugin.git resource-center-plugin
 exit
 ./launcher rebuild app
 ```
@@ -62,7 +88,8 @@ hooks:
     - exec:
         cd: $home/plugins
         cmd:
-          - git clone https://github.com/CloudRail-BBS/Resource-Center-Plugin.git
+          #                                     ↓↓↓ 目录名必须显式指定
+          - git clone https://github.com/CloudRail-BBS/Resource-Center-Plugin.git resource-center-plugin
 ```
 
 ### 若目录名曾经不匹配
@@ -71,7 +98,7 @@ hooks:
 
 ```bash
 mv /var/discourse/plugins/discourse-relay-rooms \
-   /var/discourse/plugins/Resource-Center-Plugin
+   /data/discourse/plugins/resource-center-plugin
 ```
 
 `app.yml` 里 `after_code` 的 `git clone` 目标目录也要一并去掉（或改成新名字），否则下次重建会克隆出第二个目录。
@@ -88,8 +115,8 @@ python scripts/validate.py
 `./launcher rebuild app` **不会拉取新代码** —— `after_code` 里执行的是 `git clone`，目录已存在时克隆直接失败，于是重新编译的仍是旧代码。先 `git pull` 再 rebuild：
 
 ```bash
-cd /var/discourse/plugins/Resource-Center-Plugin && git pull
-cd /var/discourse && ./launcher rebuild app
+cd /data/discourse/plugins/resource-center-plugin && git pull
+cd /data/discourse && ./launcher rebuild app
 ```
 
 ## 启用
@@ -119,14 +146,14 @@ cd /var/discourse && ./launcher rebuild app
 
 ```bash
 # 从页面里找到插件的 JS 地址，然后看它的内容
-curl -s https://<域名>/relay-rooms | grep -oE 'src="[^"]*Resource-Center-Plugin[^"]*\.js[^"]*"'
-curl -s https://<域名>/assets/js/plugins/Resource-Center-Plugin_main-<hash>.digested.js
+curl -s https://<域名>/relay-rooms | grep -oE 'src="[^"]*resource-center-plugin[^"]*\.js[^"]*"'
+curl -s https://<域名>/assets/js/plugins/resource-center-plugin_main-<hash>.digested.js
 ```
 
 如果输出只有一行、以 `throw new Error("[PLUGIN ...] Compile error: ...` 开头，就是这个原因。它会**直接告诉你哪个文件、缺什么**：
 
 ```
-throw new Error("[PLUGIN Resource-Center-Plugin] Compile error: SyntaxError:
+throw new Error("[PLUGIN resource-center-plugin] Compile error: SyntaxError:
 .../components/relay-rooms-page.gjs: Attempted to resolve a component or helper
 in a strict mode template, but that value was not in scope: i18n");
 ```
@@ -151,7 +178,7 @@ import { eq } from "discourse/truth-helpers";  // (eq a b)
 **这几乎可以断定：插件样式表 404 了。**
 
 ```bash
-curl -s https://<域名>/relay-rooms | grep -oE '/stylesheets/Resource-Center-Plugin_[a-f0-9]+\.css'
+curl -s https://<域名>/relay-rooms | grep -oE '/stylesheets/resource-center-plugin_[a-f0-9]+\.css'
 curl -s -o /dev/null -w "%{http_code}\n" https://<域名><上面那条路径>
 ```
 
@@ -168,7 +195,7 @@ bash scripts/diagnose-stylesheet.sh https://<域名> /var/discourse
 **构建日志里搜这些**（重建输出只在终端里，要自己 tee 下来）：
 
 ```bash
-cd /var/discourse && ./launcher rebuild app 2>&1 | tee /tmp/rebuild.log
+cd /data/discourse && ./launcher rebuild app 2>&1 | tee /tmp/rebuild.log
 grep -nE 'precompile target|SCSS compilation error|ScssError' /tmp/rebuild.log
 ```
 
@@ -195,7 +222,7 @@ grep -nE 'precompile target|SCSS compilation error|ScssError' /tmp/rebuild.log
 
 ```bash
 # 插件是否真的被加载了？启动日志里搜
-cd /var/discourse && ./launcher logs app 2>&1 | grep -i "Resource-Center-Plugin"
+cd /data/discourse && ./launcher logs app 2>&1 | grep -i "resource-center-plugin"
 ```
 
 再确认接口本身通不通：
@@ -264,8 +291,8 @@ curl -i https://<你的域名>/relay-rooms/rooms.json
 
 ```bash
 npm install                 # content-tag（校验 .gjs）+ sass（编译样式/预览）
-python scripts/validate.py  # 24 项静态检查
-bash scripts/selftest.sh    # 证明上述检查确实会失败（27 个注入用例）
+python scripts/validate.py  # 25 项静态检查
+bash scripts/selftest.sh    # 证明上述检查确实会失败（28 个注入用例）
 ruby scripts/test_parsing.rb  # 加载真实实现 + 真实数据验证解析逻辑
 python scripts/build-preview.py  # 生成可视化预览（见下）
 ```
@@ -325,7 +352,7 @@ python scripts/build-preview.py
 
 ```ruby
 module ::RelayRooms
-  PLUGIN_NAME = "Resource-Center-Plugin"
+  PLUGIN_NAME = "resource-center-plugin"
 end
 
 require_relative "lib/relay_rooms/engine"
@@ -422,7 +449,7 @@ grep -rn '^#[[:space:]]*$' /var/discourse/plugins/*/plugin.rb
 ## 目录结构
 
 ```
-Resource-Center-Plugin/
+resource-center-plugin/
 ├── plugin.rb                        # PLUGIN_NAME 定义、元数据、站点设置、资源注册、管理路由
 ├── config/
 │   ├── settings.yml

@@ -4,11 +4,14 @@ import { withPluginApi } from "discourse/lib/plugin-api";
 //
 // These lookups are keyed off the DIRECTORY, not the `# name:`: core serializes
 // the admin plugin list via `AdminPluginSerializer#id`, which returns
-// `object.directory_name`. Because this repo's name, its directory and its
-// `# name:` are all `Resource-Center-Plugin`, the two can no longer disagree —
-// registering the nav under one and having the page look for the other was the
-// failure mode to avoid.
-const PLUGIN_ID = "Resource-Center-Plugin";
+// `object.directory_name`. Because the directory and `# name:` are both
+// `resource-center-plugin`, the two cannot disagree — registering the nav under
+// one and having the page look for the other was the failure mode to avoid.
+//
+// Lowercase is required, not cosmetic: core's stylesheet route constrains :name
+// to /[-a-z0-9_]+/, so an uppercase directory loses its CSS entirely. See
+// plugin.rb.
+const PLUGIN_ID = "resource-center-plugin";
 
 export default {
   name: "relay-rooms-admin-plugin-configuration-nav",
