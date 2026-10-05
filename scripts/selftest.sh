@@ -154,6 +154,12 @@ run_case "bare-hash-line-in-plugin-rb" \
 run_case "colon-only-comment-line" \
   'sed -i "s|^# transpile_js: true$|# transpile_js: true\n#:|" plugin.rb'
 
+# 22. addCommunitySectionLink's `secondary` argument set to true, which files the
+#     link inside the sidebar's "More…" drawer. Registration succeeds and nothing
+#     warns, so the page simply appears to have no nav entry.
+run_case "community-link-in-more-drawer" \
+  'sed -i "s|^      api.addCommunitySectionLink({|      api.addCommunitySectionLink(\n        {|; s|^      });$|        },\n        true,\n      );|" assets/javascripts/discourse/initializers/relay-rooms-navigation.js'
+
 # 19. Serializer moved back into lib/, where it cannot resolve its
 #     Zeitwerk-loaded base class during plugin activation.
 run_case "serializer-in-lib" \

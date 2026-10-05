@@ -376,6 +376,65 @@ def check_nav_class_collision() -> None:
 
 
 # --------------------------------------------------------------------------
+# 7b. addCommunitySectionLink's second argument hides the link
+#
+# The signature is `addCommunitySectionLink(arg, secondary)`, documented as
+# "Determines whether the section link should be added to the main or secondary
+# section in the 'More...' links drawer." Passing true therefore files the link
+# inside the "More…" drawer rather than the visible list.
+#
+# That is a silent failure: the registration succeeds, no warning is logged, and
+# the only symptom is that the page appears to have no navigation entry at all —
+# which reads like a routing or initializer bug and sends you looking in the
+# wrong place. Omit the argument (or pass false) to land in the main list.
+# --------------------------------------------------------------------------
+def check_community_section_link_secondary() -> None:
+    for path in sorted((ROOT / "assets" / "javascripts").rglob("*.js")):
+        body = strip_js_comments(read(path))
+
+        for match in re.finditer(r"addCommunitySectionLink\s*\(", body):
+            # Walk the argument list to find whether a second top-level arg exists.
+            depth = 1
+            index = match.end()
+            top_level_args = 1
+
+            while index < len(body) and depth > 0:
+                char = body[index]
+                if char in "([{":
+                    depth += 1
+                elif char in ")]}":
+                    depth -= 1
+                elif char == "," and depth == 1:
+                    top_level_args += 1
+                index += 1
+
+            if top_level_args < 2:
+                continue
+
+            tail = body[match.end() : index]
+            # Everything after the first top-level comma is the `secondary` arg.
+            depth = 1
+            for position, char in enumerate(tail):
+                if char in "([{":
+                    depth += 1
+                elif char in ")]}":
+                    depth -= 1
+                elif char == "," and depth == 1:
+                    # Take the leading token of the second argument rather than
+                    # comparing the whole tail: trailing commas and newlines make
+                    # it "true,\n      )" instead of "true".
+                    token = re.match(r"\s*([A-Za-z0-9_.]+)", tail[position + 1 :])
+                    if token and token.group(1) == "true":
+                        fail(
+                            f"{path.name}: addCommunitySectionLink(..., true) files the "
+                            "link inside the sidebar's \"More…\" drawer, so the page "
+                            "looks like it has no navigation entry. Omit the argument "
+                            "to place it in the main list."
+                        )
+                    break
+
+
+# --------------------------------------------------------------------------
 # 8. SCSS: no bare plugin-root rule, and balanced braces
 # --------------------------------------------------------------------------
 def check_stylesheets() -> None:
@@ -1077,6 +1136,7 @@ def main() -> int:
         check_route_map,
         check_parent_outlet,
         check_nav_class_collision,
+        check_community_section_link_secondary,
         check_stylesheets,
         check_i18n,
         check_site_setting_labels,

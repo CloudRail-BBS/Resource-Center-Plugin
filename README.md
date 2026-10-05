@@ -95,12 +95,12 @@ cd /var/discourse && ./launcher rebuild app
 ## 启用
 
 1. 进入 `/admin/site_settings/category/plugins`（或 `/admin/plugins` → 联机房 → 设置）。
-2. 打开 **relay_rooms_enabled**。
+2. 确认 **relay_rooms_enabled** 是打开的。
 3. 按需调整以下设置。
 
 | 设置 | 默认值 | 说明 |
 | --- | --- | --- |
-| `relay_rooms_enabled` | `false` | 总开关 |
+| `relay_rooms_enabled` | `true` | 总开关（关闭时页面 404、导航入口消失） |
 | `relay_rooms_api_url` | `http://101.43.41.22:46784/relay/rooms` | 中继接口地址 |
 | `relay_rooms_refresh_seconds` | `30` | 前端自动刷新间隔（秒，5–600） |
 | `relay_rooms_show_ingame` | `true` | 是否显示已开局的房间 |
@@ -108,6 +108,52 @@ cd /var/discourse && ./launcher rebuild app
 | `relay_rooms_http_timeout` | `8` | 服务端请求中继的超时（秒） |
 | `relay_rooms_request_timeout_ms` | `10000` | 浏览器请求本站接口的超时（毫秒） |
 | `relay_rooms_cache_seconds` | `10` | 服务端缓存秒数，`0` 表示不缓存 |
+
+## 前端看不到联机房？按这个顺序查
+
+### 1. 直接访问 `/relay-rooms`
+
+这一步能把「路由/页面问题」和「导航入口问题」分开：
+
+- **能看到页面** → 路由和控制器都正常，问题只在导航入口，看第 3 步。
+- **404** → 插件没启用，或引擎没挂载上。看第 2 步。
+
+### 2. 404 时
+
+```bash
+# 插件是否真的被加载了？启动日志里搜
+cd /var/discourse && ./launcher logs app 2>&1 | grep -i "Resource-Center-Plugin"
+```
+
+再确认接口本身通不通：
+
+```bash
+curl -i https://<你的域名>/relay-rooms/rooms.json
+```
+
+| 返回 | 含义 |
+| --- | --- |
+| `200` + JSON | 服务端正常，问题在前端 |
+| `404` | 插件未启用（`relay_rooms_enabled` 为关） |
+| `502` | 插件已启用，但**中继服务器不可达** —— 查 `relay_rooms_api_url` 和服务器出网 |
+
+### 3. 页面能打开但找不到入口
+
+导航入口注册在**两个**表面上，取决于 `navigation_menu` 设置：
+
+| 表面 | 谁能看到 | 说明 |
+| --- | --- | --- |
+| 侧边栏 Community 区块 | **仅登录用户** | `navigation_menu: sidebar`（默认）时靠它 |
+| 顶部导航栏 | 所有人 | `navigation_menu` 为 legacy / header_dropdown 时才渲染 |
+
+**匿名访客看不到侧边栏的 Community 区块**——这是 Discourse 的设计，不是 bug。所以对未登录访客，请用 `navigation_menu` 非 sidebar 的配置，或直接在帖子/公告里放 `/relay-rooms` 链接。
+
+发帖时可以用工具栏的「联机房列表」按钮插入当前房间表格。
+
+### 4. 排查时的两个已知坑
+
+- **`addCommunitySectionLink` 的第二个参数**（`secondary`）若传 `true`，链接会被塞进侧边栏的 **「更多…」抽屉**里而不是主列表——注册成功、无任何告警，只是"看起来没有入口"。本插件不传该参数。
+- **`relay_rooms_enabled` 的默认值只在从未被改动过时生效**。如果之前手动关过，存储值会覆盖默认值，必须显式打开。
 
 ## 接口约定
 
@@ -145,8 +191,8 @@ cd /var/discourse && ./launcher rebuild app
 
 ```bash
 npm install                 # 仅需 content-tag
-python scripts/validate.py  # 19 项静态检查
-bash scripts/selftest.sh    # 证明上述检查确实会失败（23 个注入用例）
+python scripts/validate.py  # 20 项静态检查
+bash scripts/selftest.sh    # 证明上述检查确实会失败（24 个注入用例）
 ruby scripts/test_parsing.rb  # 加载真实实现 + 真实数据验证解析逻辑
 ```
 

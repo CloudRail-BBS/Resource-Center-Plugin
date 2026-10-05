@@ -1,6 +1,14 @@
 plugins:
   relay_rooms_enabled:
-    default: false
+    # Defaults to true so the page works immediately after install. This plugin
+    # only reads a public API and renders it: no writes, no DB tables, no
+    # background jobs, so there is nothing to opt into. discourse-solved defaults
+    # its own enabled setting to true for the same reason.
+    #
+    # Note this default only applies while no value has been stored. If the
+    # setting has ever been toggled, the stored value wins — check
+    # /admin/site_settings/category/plugins if the page still does not appear.
+    default: true
     client: true
   relay_rooms_api_url:
     default: "http://101.43.41.22:46784/relay/rooms"

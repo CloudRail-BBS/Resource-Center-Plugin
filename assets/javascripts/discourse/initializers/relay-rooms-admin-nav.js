@@ -19,11 +19,13 @@ export default {
       return;
     }
 
-    const siteSettings = container.lookup("service:site-settings");
-    if (!siteSettings.relay_rooms_enabled) {
-      return;
-    }
-
+    // Deliberately NOT gated on `relay_rooms_enabled`.
+    //
+    // Gating it here meant that while the plugin was disabled — the default
+    // before this was changed — its admin tab did not appear either, so there
+    // was no in-admin way to discover the setting that turns it on. The tab
+    // should be reachable precisely when the plugin is off; the status page
+    // already reports "disabled" and points at the setting.
     withPluginApi((api) => {
       api.setAdminPluginIcon(PLUGIN_ID, "plug");
       api.addAdminPluginConfigurationNav(PLUGIN_ID, [
