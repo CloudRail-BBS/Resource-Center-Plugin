@@ -2,18 +2,24 @@
 # Recompiles this plugin's stylesheets through Discourse's real pipeline, and
 # reports what the cache ends up holding.
 #
-# ONE COMMAND, from the host — substitute your own docker_manager directory:
+# It must run where Redis and Postgres are up -- i.e. inside the RUNNING
+# container. `./launcher run app` is NOT that: it starts a fresh one-off
+# container with no services, so Rails dies on
+# "Couldn't connect to Redis ... 127.0.0.1:6379".
 #
-#     cd /var/discourse && ./launcher run app "cd /var/www/discourse && bash plugins/<plugin-dir>/scripts/recompile-stylesheets.sh"
+# From the host, this script finds the running container itself:
 #
-# The host directory varies by install (`/var/discourse`, `/data/discourse`, …).
-# The path INSIDE the container does not: it is always /var/www/discourse. Only
-# the leading `cd` changes.
+#     bash plugins/<plugin-dir>/scripts/recompile-stylesheets.sh
+#     DISCOURSE_CONTAINER=<name> bash ...        # if it is not called 'app'
 #
-# Or if you prefer to be inside the container already:
+# Or do it by hand, from your docker_manager directory (path varies:
+# /var/discourse, /data/discourse, ...):
 #
-#     cd <your-discourse-dir> && ./launcher enter app
-#     cd /var/www/discourse && bash plugins/<plugin-dir>/scripts/recompile-stylesheets.sh
+#     ./launcher enter app
+#     cd /var/www/discourse && bundle exec rails runner plugins/<plugin-dir>/scripts/recompile-stylesheets.rb
+#
+# Note the two paths differ on purpose: the HOST directory varies, but inside the
+# container it is always /var/www/discourse.
 #
 # Why a script instead of an inline command: the Ruby has to run inside the
 # container against the app, and `rails runner '...'` inline means nested quoting
@@ -54,35 +60,42 @@ if [ -f "$INNER_ROOT/config/environment.rb" ]; then
 fi
 
 # --------------------------------------------------------------------------
-# On the host: re-enter the container. The plugin directory is bind-mounted, so
-# this same file is already visible inside at $INNER_ROOT/$RUNNER_REL.
+# On the host: run it in the ALREADY-RUNNING container.
+#
+# NOT `./launcher run app` -- that starts a fresh one-off container from the
+# bootstrapped image with no services running, so Redis and Postgres are down and
+# Rails cannot boot at all:
+#
+#     Couldn't connect to Redis
+#     Connection refused - connect(2) for 127.0.0.1:6379
+#       from app/models/global_setting.rb:41:in 'GlobalSetting.safe_secret_key_base'
+#
+# `docker exec` against the running container is what actually works.
 # --------------------------------------------------------------------------
-LAUNCHER=""
-# The host directory differs per install — /var/discourse is only the common
-# default. Look in the usual places, then next to this plugin.
-for candidate in \
-  "./launcher" \
-  "/var/discourse/launcher" \
-  "/data/discourse/launcher" \
-  "$(dirname "$(dirname "$(dirname "$PLUGIN_DIR")")")/launcher"
-do
-  if [ -x "$candidate" ]; then
-    LAUNCHER="$candidate"
-    break
-  fi
-done
+CONTAINER="${DISCOURSE_CONTAINER:-app}"
 
-if [ -z "$LAUNCHER" ]; then
-  echo "Not inside the container, and no ./launcher found." >&2
-  echo "Run this from your docker_manager directory, e.g.:" >&2
-  echo "    cd /data/discourse && ./launcher run app \"cd $INNER_ROOT && bash $RUNNER_REL\"" >&2
-  echo "or copy that command from the header of this file." >&2
+if ! command -v docker >/dev/null 2>&1; then
+  echo "docker not found on this host. Run it inside the container instead:" >&2
+  echo "    cd <your-discourse-dir> && ./launcher enter app" >&2
+  echo "    cd $INNER_ROOT && bundle exec rails runner $RUNNER_REL" >&2
   exit 1
 fi
 
-echo "host detected; re-entering the container via $LAUNCHER"
+if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTAINER"; then
+  echo "No running container named '$CONTAINER'." >&2
+  echo "Running containers:" >&2
+  docker ps --format '  {{.Names}}' 2>/dev/null >&2 || true
+  echo >&2
+  echo "Set the right one with:  DISCOURSE_CONTAINER=<name> bash $0" >&2
+  echo "Or run it inside the container:" >&2
+  echo "    cd <your-discourse-dir> && ./launcher enter app" >&2
+  echo "    cd $INNER_ROOT && bundle exec rails runner $RUNNER_REL" >&2
+  exit 1
+fi
+
+echo "host detected; running inside the live container '$CONTAINER'"
 echo
 
-# The inner command contains no quotes or spaces, so one level of quoting is all
-# that is needed.
-exec "$LAUNCHER" run app "cd $INNER_ROOT && bash $RUNNER_REL"
+# -i, not -it: this must work when output is piped, and there is no TTY in a
+# captured session.
+exec docker exec -i "$CONTAINER" bash -c "cd $INNER_ROOT && bundle exec rails runner $RUNNER_REL"

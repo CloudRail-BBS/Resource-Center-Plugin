@@ -137,22 +137,26 @@ sed "s/__PLUGIN_NAME__/${PLUGIN_NAME}/g" <<'CONSOLE'
   both rescues and prints the real error -- and usually fixes the page outright,
   because it writes the cache row the build failed to write.
 
-  ONE command, from the host. Substitute YOUR docker_manager directory --
-  /var/discourse is only the common default; some installs use /data/discourse:
+  It has to run INSIDE THE RUNNING CONTAINER, where Redis and Postgres are up.
+  `./launcher run app` is NOT that -- it starts a fresh one-off container with no
+  services, and Rails dies immediately on
 
-      cd /data/discourse && ./launcher run app "cd /var/www/discourse && bash plugins/__PLUGIN_NAME__/scripts/recompile-stylesheets.sh"
+      Couldn't connect to Redis
+      Connection refused - connect(2) for 127.0.0.1:6379
+        from app/models/global_setting.rb:41:in 'GlobalSetting.safe_secret_key_base'
 
-  Note the two paths differ on purpose: the host directory varies, but the path
-  INSIDE the container is always /var/www/discourse.
-
-  That script also works from inside the container:
+  So use `enter`, from your docker_manager directory (path varies:
+  /var/discourse, /data/discourse, ...):
 
       cd /data/discourse && ./launcher enter app
-      cd /var/www/discourse && bash plugins/__PLUGIN_NAME__/scripts/recompile-stylesheets.sh
+      cd /var/www/discourse && bundle exec rails runner plugins/__PLUGIN_NAME__/scripts/recompile-stylesheets.rb
+
+  Note the two paths differ on purpose: the HOST directory varies, but inside the
+  container it is always /var/www/discourse.
 
   Do NOT paste the Ruby into bash -- `Builder.new(target: ...)` is Ruby, and bash
-  reports "syntax error near unexpected token `target:'". The script exists so
-  there is no inline Ruby to quote.
+  reports "syntax error near unexpected token `target:'". That is why the runner
+  is a file.
 
   What to look for in its output:
     - `compile : FAILED` -> that is the cause; send the error and backtrace.
