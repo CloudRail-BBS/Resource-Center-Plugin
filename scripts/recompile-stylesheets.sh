@@ -3,20 +3,31 @@
 # reports what the cache ends up holding.
 #
 # It must run where Redis and Postgres are up -- i.e. inside the RUNNING
-# container. `./launcher run app` is NOT that: it starts a fresh one-off
-# container with no services, so Rails dies on
-# "Couldn't connect to Redis ... 127.0.0.1:6379".
+# container, and as the `discourse` user.
 #
-# From the host, this script finds the running container itself:
+# Two invocation traps, both of which look like plugin errors:
+#
+#   ./launcher run app "..."   starts a fresh one-off container with NO services,
+#                              so Redis is down and Rails cannot boot:
+#                                Couldn't connect to Redis ... 127.0.0.1:6379
+#
+#   ./launcher enter app       gives you ROOT, and Postgres uses peer auth, so:
+#                                FATAL: Peer authentication failed for user "discourse"
+#                                Database not found: discourse
+#                              (the "database not found" line is a consequence)
+#                              Wrap in `su discourse -c '...'`, which is exactly
+#                              what Discourse's own db_migrate step does.
+#
+# From the host, this script handles both:
 #
 #     bash plugins/<plugin-dir>/scripts/recompile-stylesheets.sh
 #     DISCOURSE_CONTAINER=<name> bash ...        # if it is not called 'app'
 #
-# Or do it by hand, from your docker_manager directory (path varies:
+# Or by hand, from your docker_manager directory (path varies:
 # /var/discourse, /data/discourse, ...):
 #
 #     ./launcher enter app
-#     cd /var/www/discourse && bundle exec rails runner plugins/<plugin-dir>/scripts/recompile-stylesheets.rb
+#     su discourse -c "cd /var/www/discourse && bundle exec rails runner plugins/<plugin-dir>/scripts/recompile-stylesheets.rb"
 #
 # Note the two paths differ on purpose: the HOST directory varies, but inside the
 # container it is always /var/www/discourse.
@@ -36,6 +47,29 @@ INNER_ROOT="/var/www/discourse"
 RUNNER_REL="plugins/$PLUGIN_NAME/scripts/recompile-stylesheets.rb"
 
 # --------------------------------------------------------------------------
+# Rails must run as the `discourse` user, not as root.
+#
+# Postgres in the container uses PEER authentication on the unix socket, so the
+# OS user has to match the database user. `./launcher enter app` gives you root,
+# and root gets:
+#
+#     FATAL: Peer authentication failed for user "discourse" (PG::ConnectionBad)
+#     Database not found: discourse (ActiveRecord::NoDatabaseError)
+#
+# The "database not found" line is a consequence, not the cause -- the connection
+# never succeeded. This is why Discourse's own boot runs `su discourse -c '...'`
+# (see the db_migrate step in the bootstrap output).
+# --------------------------------------------------------------------------
+run_rails() {
+  if [ "$(id -u)" = "0" ] && id discourse >/dev/null 2>&1; then
+    su discourse -c "cd $INNER_ROOT && bundle exec rails runner $RUNNER_REL"
+  else
+    cd "$INNER_ROOT" || exit 1
+    bundle exec rails runner "$RUNNER_REL"
+  fi
+}
+
+# --------------------------------------------------------------------------
 # Inside the container: run it.
 # --------------------------------------------------------------------------
 if [ -f "$INNER_ROOT/config/environment.rb" ]; then
@@ -45,18 +79,11 @@ if [ -f "$INNER_ROOT/config/environment.rb" ]; then
     exit 1
   fi
 
-  cd "$INNER_ROOT" || exit 1
   echo "plugin : $PLUGIN_NAME"
   echo "runner : $RUNNER_REL"
   echo
-
-  # `rails runner` rather than `rails c`: non-interactive, so the whole output
-  # can be copied back in one piece.
-  if command -v bundle >/dev/null 2>&1; then
-    exec bundle exec rails runner "$RUNNER_REL"
-  else
-    exec rails runner "$RUNNER_REL"
-  fi
+  run_rails
+  exit $?
 fi
 
 # --------------------------------------------------------------------------
@@ -77,7 +104,10 @@ CONTAINER="${DISCOURSE_CONTAINER:-app}"
 if ! command -v docker >/dev/null 2>&1; then
   echo "docker not found on this host. Run it inside the container instead:" >&2
   echo "    cd <your-discourse-dir> && ./launcher enter app" >&2
-  echo "    cd $INNER_ROOT && bundle exec rails runner $RUNNER_REL" >&2
+  echo "    su discourse -c \"cd $INNER_ROOT && bundle exec rails runner $RUNNER_REL\"" >&2
+  echo >&2
+  echo "The 'su discourse' is required: enter gives you root, and Postgres uses" >&2
+  echo "peer auth, so root gets 'Peer authentication failed for user \"discourse\"'." >&2
   exit 1
 fi
 
@@ -89,7 +119,7 @@ if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$CONTAINER"; then
   echo "Set the right one with:  DISCOURSE_CONTAINER=<name> bash $0" >&2
   echo "Or run it inside the container:" >&2
   echo "    cd <your-discourse-dir> && ./launcher enter app" >&2
-  echo "    cd $INNER_ROOT && bundle exec rails runner $RUNNER_REL" >&2
+  echo "    su discourse -c \"cd $INNER_ROOT && bundle exec rails runner $RUNNER_REL\"" >&2
   exit 1
 fi
 
@@ -97,5 +127,5 @@ echo "host detected; running inside the live container '$CONTAINER'"
 echo
 
 # -i, not -it: this must work when output is piped, and there is no TTY in a
-# captured session.
-exec docker exec -i "$CONTAINER" bash -c "cd $INNER_ROOT && bundle exec rails runner $RUNNER_REL"
+# captured session. `su discourse` because of peer authentication, as above.
+exec docker exec -i "$CONTAINER" bash -c "cd $INNER_ROOT && su discourse -c 'bundle exec rails runner $RUNNER_REL'"
