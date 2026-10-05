@@ -3,6 +3,7 @@ import { tracked } from "@glimmer/tracking";
 import { action } from "@ember/object";
 import { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
+import { decorateRooms } from "../../lib/relay-rooms";
 
 const ROOMS_URL = "/relay-rooms/rooms.json";
 const MIN_REFRESH_SECONDS = 5;
@@ -83,7 +84,14 @@ export default class RelayRoomsIndexController extends Controller {
       return;
     }
 
-    this.rooms = Array.isArray(payload.rooms) ? payload.rooms : [];
+    // MUST go through decorateRooms. The component reads derived fields that the
+    // API does not send — statusClass, statusLabel, chips, mapKindLabel,
+    // meterState, meterStyle, capacityStateLabel, isJoinable, address. Assigning
+    // payload.rooms directly leaves every one of them undefined, which does not
+    // throw: the status pill renders uncoloured and without its label, the
+    // capacity meter never gets a width, and both the Join and Copy buttons
+    // disappear entirely because `{{#if room.isJoinable}}` is falsy.
+    this.rooms = decorateRooms(payload.rooms);
     this.meta = payload.meta ?? null;
     this.errorMessage = null;
   }

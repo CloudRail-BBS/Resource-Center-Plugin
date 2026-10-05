@@ -15,3 +15,7 @@ tmp/
 
 # Local scratch (e.g. commit message files used with git commit -F)
 *.tmp
+
+# Preview output (scripts/build-preview.py)
+preview/
+.preview-tmp/

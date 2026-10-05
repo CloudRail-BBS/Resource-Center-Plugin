@@ -10,5 +10,8 @@
   },
   "devDependencies": {
     "content-tag": "^3.1.3"
+  },
+  "dependencies": {
+    "sass": "^1.105.1"
   }
 }

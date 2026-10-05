@@ -14,10 +14,15 @@ zh_CN:
       offline_hint: "请稍后重试，或联系管理员检查中继服务器状态。"
       room_count: "共 %{count} 个房间"
       players_count: "%{active} / %{total} 人"
+      live: "实时"
+      capacity: "容量 %{active} / %{total}"
+      capacity_full: "已满"
+      capacity_empty: "空房"
       filters:
         all: "全部"
         battleroom: "等待中"
         ingame: "游戏中"
+        aria: "按状态筛选房间"
       table:
         room: "房间号"
         host: "房主"

@@ -1272,6 +1272,84 @@ def check_global_i18n_not_used() -> None:
 
 
 # --------------------------------------------------------------------------
+# 22. Derived room fields must actually be derived
+#
+# `decorateRoom` in lib/relay-rooms.js adds fields the API never sends —
+# statusClass, statusLabel, chips, mapKindLabel, meterState, meterStyle,
+# capacityStateLabel, isJoinable, address. The component reads them directly.
+#
+# If nothing calls the decorator, every one of those is `undefined`, and NONE of
+# it throws: the status pill loses its colour and label, the capacity meter gets
+# no width, and `{{#if room.isJoinable}}` is falsy so the Join and Copy buttons
+# vanish. The page still renders, so it reads as a styling problem.
+#
+# This check derives the field list from the decorator itself rather than
+# hardcoding it, so adding a derived field keeps the check honest.
+# --------------------------------------------------------------------------
+def decorator_derived_fields() -> set[str]:
+    source = read(ROOT / "assets" / "javascripts" / "discourse" / "lib" / "relay-rooms.js")
+
+    match = re.search(r"return \{\n(.*?)\n  \};", source, re.S)
+    if not match:
+        return set()
+
+    body = match.group(1)
+    fields = set(re.findall(r"^\s{4}([a-zA-Z_][\w]*):", body, re.M))
+    fields |= set(re.findall(r"^\s{4}([a-zA-Z_][\w]*),$", body, re.M))
+    return fields
+
+
+def check_derived_fields_are_applied() -> None:
+    derived = decorator_derived_fields()
+
+    if not derived:
+        warn("could not read derived fields from decorateRoom; check skipped")
+        return
+
+    js_root = ROOT / "assets" / "javascripts" / "discourse"
+
+    # Which derived fields does any component/template actually read?
+    used: dict[str, set[str]] = {}
+    for path in sorted(js_root.rglob("*")):
+        if path.suffix not in (".gjs", ".js") or "lib" in path.parts:
+            continue
+        body = read(path)
+        for field in derived:
+            if re.search(rf"\b\w+\.{re.escape(field)}\b", body):
+                used.setdefault(field, set()).add(path.name)
+
+    if not used:
+        return
+
+    readers = sorted({name for names in used.values() for name in names})
+
+    # Check the ASSIGNMENT that feeds the page, not "is the decorator called
+    # somewhere". A coarse check passes here for the wrong reason: the composer
+    # toolbar button also calls decorateRooms (to build its Markdown table), so
+    # "called anywhere" is satisfied even while the page's own controller hands
+    # raw payload straight to the component.
+    assignments: list[tuple[str, str]] = []
+    for path in sorted((js_root / "controllers").rglob("*.js")):
+        for match in re.finditer(r"this\.rooms\s*=\s*([^;]+);", read(path)):
+            assignments.append((path.name, match.group(1).strip()))
+
+    if not assignments:
+        warn("no `this.rooms =` assignment found in controllers/; check skipped")
+        return
+
+    for name, rhs in assignments:
+        if not re.search(r"\bdecorateRooms?\s*\(", rhs):
+            fail(
+                f"{name}: `this.rooms = {rhs}` does not go through decorateRooms(). The "
+                f"component reads derived fields ({', '.join(sorted(used))}) that the API "
+                "does not send, so all of them are undefined WITHOUT throwing: the status "
+                "pill loses its colour and label, the capacity meter gets no width, and the "
+                "Join/Copy buttons disappear because {{#if room.isJoinable}} is falsy. "
+                f"Read in: {', '.join(readers)}."
+            )
+
+
+# --------------------------------------------------------------------------
 def main() -> int:
     checks = (
         check_plugin_name,
@@ -1293,6 +1371,7 @@ def main() -> int:
         check_gjs_parse,
         check_gjs_template_scope,
         check_global_i18n_not_used,
+        check_derived_fields_are_applied,
         check_serializer_attributes,
         check_serialize_data,
         check_api_client,

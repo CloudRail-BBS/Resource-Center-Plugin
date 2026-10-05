@@ -1,3 +1,8 @@
+// `htmlSafe` so the capacity meter can carry an exact inline width. The `style`
+// attribute is applied unescaped only for a SafeString, and the value is derived
+// from two numbers, so there is no injection surface.
+import { htmlSafe } from "@ember/template";
+
 export const ROOMS_URL = "/relay-rooms/rooms.json";
 
 // Room statuses arrive as "battleroom" / "ingame" / "closed". Anything else is
@@ -52,35 +57,55 @@ export function playersLabel(room) {
 export function decorateRoom(room) {
   const status = normalizeStatus(room?.status);
 
-  const badges = [];
+  const total = Number(room?.player_size) || 0;
+  const active = Number(room?.active_connection_size) || 0;
+  const ratio = total > 0 ? Math.min(Math.max(active / total, 0), 1) : 0;
 
+  const isFull = total > 0 && active >= total;
+  const isEmpty = active === 0;
+
+  // Filled / open / empty drives the meter colour. A full room and an empty one
+  // need to read differently at a glance — that is the whole job of the meter,
+  // and it is the question a player opens this page to answer.
+  //
+  // A percentage rather than N discrete slots: totals here run from 1 to 20+
+  // (20p maps are common), and a 20-segment bar stops being scannable.
+  const meterState = isEmpty ? "empty" : isFull ? "full" : "open";
+
+  const chips = [];
   if (room?.is_mod) {
-    badges.push({ key: "mod", label: "relay_rooms.badges.mod" });
+    chips.push({ key: "mod", label: "relay_rooms.badges.mod" });
   }
   if (room?.is_public) {
-    badges.push({ key: "public", label: "relay_rooms.badges.public" });
+    chips.push({ key: "public", label: "relay_rooms.badges.public" });
   }
   if (room?.is_custom) {
-    badges.push({ key: "custom", label: "relay_rooms.badges.custom" });
-  }
-  if (room?.is_full) {
-    badges.push({ key: "full", label: "relay_rooms.badges.full" });
+    chips.push({ key: "custom", label: "relay_rooms.badges.custom" });
   }
 
   return {
     ...room,
     status,
     statusLabel: `relay_rooms.status.${status}`,
-    statusClass: statusClass(status),
+    statusClass: `relay-rooms__status--${status}`,
     address: joinAddress(room),
-    badges,
-    isJoinable: status !== "closed" && Boolean(room?.join_url),
+    chips,
     mapKindLabel:
       room?.map_kind === "mod"
         ? "relay_rooms.badges.mod"
         : room?.map_kind === "custom"
           ? "relay_rooms.badges.custom"
           : null,
+    meterState,
+    meterStyle: htmlSafe(`width: ${(ratio * 100).toFixed(1)}%`),
+    // Only rendered when the room is at one of the two extremes, so an ordinary
+    // half-full room stays visually quiet.
+    capacityStateLabel: isEmpty
+      ? "relay_rooms.capacity_empty"
+      : isFull
+        ? "relay_rooms.capacity_full"
+        : null,
+    isJoinable: status !== "closed" && Boolean(room?.join_url),
   };
 }
 

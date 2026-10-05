@@ -1,19 +1,38 @@
-// Styles for the relay rooms page.
+// Relay rooms — a "lobby board".
 //
-// Two rules enforced here on purpose:
+// DESIGN INTENT
+// The page answers one question before anything else: is there a room I can get
+// into? So the capacity meter is the loudest element in each row, status colour
+// is used sparingly and always paired with a text label (never colour alone),
+// and everything else — map, host, uptime — is deliberately quiet.
+//
+// Three rules enforced here on purpose:
 //
 // 1. Every selector is nested under the plugin-unique root `.relay-rooms`.
 //    A stylesheet registered without a scope leaks site-wide, and generic class
 //    names (.no-results, .loading-indicator) can collide with any core or
 //    third-party component.
-// 2. The root itself is qualified as `div.relay-rooms`, and it deliberately
-//    does NOT set `margin: 0 auto` / `max-width` on the unqualified class. A nav
+// 2. The root itself is qualified as `div.relay-rooms`, and it deliberately does
+//    NOT set `margin: 0 auto` / `max-width` on the unqualified class. A nav
 //    item's `name` is emitted as a CSS class on an <li>, so an unqualified
 //    `.relay-rooms { max-width: 1100px }` would let the nav <li> absorb all the
 //    free space in the header's flex row and stretch the whole navigation bar.
-//
-// Colors use core's color-scheme custom properties so both light and dark
-// schemes work without a per-theme override.
+// 3. Only custom properties that exist in a real colour scheme are used. These
+//    were read out of the compiled `color_definitions_scheme_*.css` rather than
+//    guessed: --success / --success-very-low, --danger, --tertiary(-very-low),
+//    --primary-50..900, --content-border-color, --shadow-card,
+//    --d-font-family--monospace, --header-offset.
+
+// A mixin rather than a `%placeholder` + `@extend`: `@extend` reaches across the
+// whole compiled sheet and can pull unrelated selectors in, and it cannot be used
+// inside a media query at all. Defined at the top level, before the scoped block,
+// so every rule below can `@include` it.
+@mixin relay-rooms-focus {
+  &:focus-visible {
+    outline: 2px solid var(--tertiary);
+    outline-offset: 2px;
+  }
+}
 
 div.relay-rooms {
   max-width: 1100px;
@@ -23,106 +42,206 @@ div.relay-rooms {
 
 // The BEM children are deliberately NOT nested under the qualified selector
 // above: they sit on <header>, <h1>, <p>, <ul>… so `div.` on the parent would
-// compile to `div.relay-rooms__header` and silently stop matching. Keeping them
-// in their own unqualified block is what makes this work.
+// compile to `div.relay-rooms__hero` and silently stop matching. Keeping them in
+// their own unqualified block is what makes this work.
 .relay-rooms {
-  &__header {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75em;
-    padding-bottom: 1em;
-    border-bottom: 1px solid var(--primary-low);
+  // ---------------------------------------------------------------------
+  // Hero
+  // ---------------------------------------------------------------------
+  &__hero {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.9em;
+    padding-bottom: 1.25em;
+    border-bottom: 1px solid var(--content-border-color);
   }
 
-  &__icon {
-    flex: 0 0 auto;
-    margin-top: 0.15em;
-    color: var(--primary-medium);
+  &__hero-mark {
+    display: grid;
+    place-items: center;
+    width: 2.5em;
+    height: 2.5em;
+    border-radius: 12px;
+    background: var(--tertiary-very-low);
+    color: var(--tertiary);
   }
 
-  &__header-text {
+  &__hero-text {
     min-width: 0;
   }
 
   &__title {
-    margin: 0 0 0.25em;
+    margin: 0;
     font-size: var(--font-up-3);
-    line-height: 1.25;
+    font-weight: 600;
+    line-height: 1.2;
     color: var(--primary);
   }
 
-  &__description {
-    margin: 0;
+  &__subtitle {
+    margin: 0.35em 0 0;
+    max-width: 46em;
     color: var(--primary-medium);
     font-size: var(--font-down-1);
+    line-height: var(--line-height-medium, 1.4);
   }
 
-  &__toolbar {
+  // The "live" cluster: a slow pulse + the last update time. It reassures that
+  // the board is current without drawing the eye away from the rooms.
+  &__live {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
+    padding: 0.3em 0.7em;
+    border-radius: 999px;
+    background: var(--primary-very-low);
+    color: var(--primary-medium);
+    font-size: var(--font-down-2);
+    white-space: nowrap;
+  }
+
+  &__pulse {
+    width: 0.5em;
+    height: 0.5em;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 0 var(--success);
+    animation: relay-rooms-pulse 2.4s ease-out infinite;
+  }
+
+  &__live-label {
+    color: var(--primary-high);
+    font-weight: 500;
+  }
+
+  &__live-time {
+    color: var(--primary-medium);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // ---------------------------------------------------------------------
+  // Sticky control bar
+  // ---------------------------------------------------------------------
+  // `--header-offset` is core's own header height variable, used the same way by
+  // core themes (themes/horizon/scss/nav-pills.scss), so this sticks below the
+  // site header instead of underneath it.
+  &__bar {
+    position: sticky;
+    top: var(--header-offset, 0);
+    z-index: 10;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.75em;
-    margin: 1em 0;
+    gap: 0.6em 1em;
+    margin-bottom: 0.85em;
+    padding: 0.7em 0;
+    border-bottom: 1px solid var(--content-border-color);
+    background: var(--secondary);
   }
 
-  &__filters,
-  &__toolbar-right {
+  &__chips {
     display: flex;
     flex-wrap: wrap;
+    gap: 0.4em;
+  }
+
+  // Filter chip with a count. The count is what makes these informative rather
+  // than merely operative — "等待中 2" answers the question without a click.
+  &__chip {
+    @include relay-rooms-focus;
+
+    display: inline-flex;
     align-items: center;
-    gap: 0.5em;
-  }
-
-  &__updated {
-    color: var(--primary-medium);
+    gap: 0.45em;
+    padding: 0.32em 0.7em;
+    border: 1px solid var(--content-border-color);
+    border-radius: 999px;
+    background: var(--secondary);
+    color: var(--primary-high);
     font-size: var(--font-down-1);
-    white-space: nowrap;
-  }
+    line-height: 1.4;
+    cursor: pointer;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
 
-  &__filter {
+    &:hover {
+      background: var(--primary-very-low);
+      border-color: var(--primary-low-mid, var(--primary-low));
+    }
+
     &.is-active {
       border-color: var(--tertiary);
+      background: var(--tertiary-very-low);
       color: var(--tertiary);
-      background: var(--tertiary-very-low, var(--primary-very-low));
+      font-weight: 500;
     }
+
+    // A zero-count tab stays visible (zero is a real answer) but stops
+    // competing for attention.
+    &.is-empty {
+      opacity: 0.55;
+    }
+  }
+
+  &__chip-count {
+    min-width: 1.35em;
+    padding: 0 0.3em;
+    border-radius: 999px;
+    background: var(--primary-low);
+    color: var(--primary-medium);
+    font-size: var(--font-down-2);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+
+  &__chip.is-active &__chip-count {
+    background: var(--tertiary);
+    color: var(--secondary);
   }
 
   &__refresh {
+    @include relay-rooms-focus;
+
     display: inline-flex;
     align-items: center;
-    gap: 0.35em;
+    gap: 0.4em;
+    padding: 0.32em 0.8em;
+    border: 1px solid var(--content-border-color);
+    border-radius: 999px;
+    background: var(--secondary);
+    color: var(--primary-high);
+    font-size: var(--font-down-1);
+    cursor: pointer;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
+
+    &:hover:not(:disabled) {
+      background: var(--primary-very-low);
+    }
 
     &:disabled {
-      opacity: 0.6;
+      cursor: default;
+      opacity: 0.65;
     }
   }
 
-  &__notice {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.6em;
-    margin: 1em 0;
-    padding: 1em 1.25em;
-    border-radius: 6px;
-    background: var(--primary-very-low);
-
-    p {
-      margin: 0.15em 0 0;
-      color: var(--primary-medium);
-      font-size: var(--font-down-1);
-    }
-
-    strong {
-      color: var(--primary);
-    }
-
-    &--error {
-      background: var(--danger-low, var(--primary-very-low));
-      border-left: 3px solid var(--danger, var(--tertiary));
-    }
+  &__refresh-icon {
+    display: inline-flex;
+    align-items: center;
   }
 
+  &__refresh:disabled &__refresh-icon {
+    animation: relay-rooms-spin 1s linear infinite;
+  }
+
+  // ---------------------------------------------------------------------
+  // Room list
+  // ---------------------------------------------------------------------
   &__list {
     display: flex;
     flex-direction: column;
@@ -132,120 +251,85 @@ div.relay-rooms {
     list-style: none;
   }
 
+  // Four zones, left to right: identity, context, capacity, actions. A grid
+  // rather than a wrapping flex row so every card has the same internal rhythm
+  // and the columns line up down the list — that alignment is most of what makes
+  // a list of records scannable.
   &__room {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns:
+      minmax(7.5em, max-content)
+      minmax(0, 1fr)
+      minmax(7em, max-content)
+      max-content;
     align-items: center;
-    gap: 0.75em 1.25em;
-    padding: 0.85em 1em;
-    border: 1px solid var(--primary-low);
-    border-left-width: 3px;
-    border-radius: 6px;
+    gap: 0.4em 1.25em;
+    padding: 0.7em 0.9em;
+    border: 1px solid var(--content-border-color);
+    border-left: 3px solid var(--primary-low);
+    border-radius: 10px;
     background: var(--secondary);
+    transition:
+      background 0.15s ease,
+      box-shadow 0.15s ease;
 
+    &:hover {
+      background: var(--primary-very-low);
+      box-shadow: var(--shadow-card);
+    }
+
+    // The left accent is a secondary cue only — status is always spelled out in
+    // the pill beside the room code, so colour is never the sole carrier.
     &--battleroom {
-      border-left-color: var(--success, var(--tertiary));
+      border-left-color: var(--success);
     }
 
     &--ingame {
       border-left-color: var(--tertiary);
     }
-
-    &:hover {
-      background: var(--primary-very-low);
-    }
   }
 
-  &__room-main {
-    flex: 1 1 12em;
+  // ---------------------------------------------------------------------
+  // Zone 1 — identity
+  // ---------------------------------------------------------------------
+  &__identity {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3em;
     min-width: 0;
   }
 
-  &__room-id {
-    display: flex;
-    align-items: center;
-    gap: 0.5em;
-  }
-
-  &__room-code {
-    font-weight: 700;
+  &__code {
+    font-family: var(--d-font-family--monospace, monospace);
     font-size: var(--font-up-1);
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.1;
     color: var(--primary);
     font-variant-numeric: tabular-nums;
-  }
-
-  &__room-host {
-    display: flex;
-    align-items: center;
-    gap: 0.35em;
-    margin-top: 0.25em;
-    color: var(--primary-medium);
-    font-size: var(--font-down-1);
-    word-break: break-word;
-  }
-
-  &__room-details {
-    flex: 2 1 20em;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.35em 1em;
-    min-width: 0;
-  }
-
-  &__detail {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35em;
-    color: var(--primary-high);
-    font-size: var(--font-down-1);
-    min-width: 0;
-
-    &--muted {
-      color: var(--primary-medium);
-    }
-  }
-
-  &__map-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
+    // Room ids are always short, and keeping them on one line keeps the identity
+    // column a fixed width so the columns below it stay aligned.
     white-space: nowrap;
-    max-width: 18em;
-  }
-
-  &__badges {
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: 0.3em;
-  }
-
-  &__badge {
-    padding: 0.1em 0.45em;
-    border-radius: 4px;
-    background: var(--primary-low);
-    color: var(--primary-high);
-    font-size: var(--font-down-2);
-    white-space: nowrap;
-
-    &--muted {
-      background: var(--primary-very-low);
-      color: var(--primary-medium);
-    }
   }
 
   &__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
     padding: 0.1em 0.5em;
-    border-radius: 4px;
+    border-radius: 999px;
     font-size: var(--font-down-2);
+    line-height: 1.6;
     white-space: nowrap;
 
     &--battleroom {
-      background: var(--success-low, var(--primary-low));
-      color: var(--success, var(--primary));
+      background: var(--success-very-low, var(--primary-very-low));
+      color: var(--success, var(--tertiary));
     }
 
     &--ingame {
-      background: var(--tertiary-low, var(--primary-low));
+      background: var(--tertiary-very-low);
       color: var(--tertiary);
     }
 
@@ -256,19 +340,429 @@ div.relay-rooms {
     }
   }
 
-  &__room-actions {
-    flex: 0 0 auto;
+  &__dot {
+    width: 0.42em;
+    height: 0.42em;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  // ---------------------------------------------------------------------
+  // Zone 2 — context (what / who / how long)
+  // ---------------------------------------------------------------------
+  &__context {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3em;
+    min-width: 0;
+  }
+
+  &__context-top,
+  &__context-bottom {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35em 0.5em;
+    min-width: 0;
+  }
+
+  &__map {
+    overflow: hidden;
+    max-width: 22em;
+    color: var(--primary-high);
+    font-size: var(--font-down-1);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__tag {
+    padding: 0.05em 0.45em;
+    border-radius: 5px;
+    background: var(--primary-very-low);
+    color: var(--primary-medium);
+    font-size: var(--font-down-2);
+    line-height: 1.7;
+    white-space: nowrap;
+  }
+
+  &__meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    min-width: 0;
+    color: var(--primary-medium);
+    font-size: var(--font-down-2);
+
+    &--dim {
+      opacity: 0.85;
+    }
+  }
+
+  &__host {
+    overflow: hidden;
+    max-width: 14em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // ---------------------------------------------------------------------
+  // Zone 3 — capacity meter (the signature element)
+  // ---------------------------------------------------------------------
+  &__capacity {
     display: flex;
     align-items: center;
     gap: 0.5em;
-    margin-left: auto;
+    min-width: 0;
   }
 
-  &__join,
-  &__room-actions .btn {
+  &__meter {
+    position: relative;
+    flex: 0 0 auto;
+    width: 3.6em;
+    height: 5px;
+    overflow: hidden;
+    border-radius: 999px;
+    // A track that reads as "empty slots" without needing a border.
+    background: var(--primary-low);
+  }
+
+  &__meter-fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--tertiary);
+    transition: width 0.3s ease;
+  }
+
+  // Colour carries the room's availability: quiet grey when nobody is in,
+  // tertiary while filling, danger when there is no room left.
+  &__capacity--empty &__meter-fill {
+    background: var(--primary-low-mid, var(--primary-low));
+  }
+
+  &__capacity--full &__meter-fill {
+    background: var(--danger);
+  }
+
+  &__count {
+    color: var(--primary-medium);
+    font-size: var(--font-down-2);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+
+    b {
+      color: var(--primary-high);
+      font-weight: 600;
+    }
+
+    i {
+      padding: 0 0.1em;
+      font-style: normal;
+      opacity: 0.6;
+    }
+  }
+
+  &__capacity--full &__count b {
+    color: var(--danger);
+  }
+
+  &__flag {
+    padding: 0.05em 0.45em;
+    border-radius: 5px;
+    background: var(--primary-very-low);
+    color: var(--primary-medium);
+    font-size: var(--font-down-2);
+    line-height: 1.7;
+    white-space: nowrap;
+  }
+
+  &__capacity--full &__flag {
+    background: var(--danger-low);
+    color: var(--danger);
+    font-weight: 500;
+  }
+
+  // ---------------------------------------------------------------------
+  // Zone 4 — actions
+  // ---------------------------------------------------------------------
+  &__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.45em;
+  }
+
+  &__join {
+    @include relay-rooms-focus;
+
     display: inline-flex;
     align-items: center;
     gap: 0.35em;
+    white-space: nowrap;
+  }
+
+  // Icon-only copy button: secondary by design. Join is the one primary action
+  // per row, and two competing buttons would flatten that.
+  &__copy {
+    @include relay-rooms-focus;
+
+    display: inline-grid;
+    place-items: center;
+    width: 2em;
+    height: 2em;
+    padding: 0;
+    border: 1px solid var(--content-border-color);
+    border-radius: 8px;
+    background: var(--secondary);
+    color: var(--primary-medium);
+    cursor: pointer;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
+
+    &:hover {
+      border-color: var(--tertiary);
+      background: var(--tertiary-very-low);
+      color: var(--tertiary);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // States: offline / empty / filtered-empty
+  // ---------------------------------------------------------------------
+  &__state {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7em;
+    margin-top: 0.25em;
+    padding: 1.1em 1.2em;
+    border: 1px solid var(--content-border-color);
+    border-radius: 10px;
+    background: var(--primary-very-low);
+
+    &--compact {
+      padding: 0.85em 1.2em;
+      justify-content: center;
+    }
+
+    &--alert {
+      border-color: var(--danger);
+      background: var(--danger-low);
+    }
+  }
+
+  &__state-mark {
+    display: inline-flex;
+    flex: 0 0 auto;
+    margin-top: 0.05em;
+    color: var(--primary-medium);
+  }
+
+  &__state--alert &__state-mark {
+    color: var(--danger);
+  }
+
+  &__state-text {
+    min-width: 0;
+
+    strong {
+      display: block;
+      color: var(--primary);
+      font-size: var(--font-0);
+      font-weight: 600;
+    }
+
+    p {
+      margin: 0.25em 0 0;
+      color: var(--primary-medium);
+      font-size: var(--font-down-1);
+      line-height: var(--line-height-medium, 1.4);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Skeleton
+  // ---------------------------------------------------------------------
+  // Mirrors the real row layout, so the page does not jump when data lands and
+  // the wait reads as "loading" rather than "broken". The four placeholder spans
+  // drop into the same four grid columns the real zones use — no separate
+  // grid-template-columns needed.
+  &__room--skeleton {
+    &:hover {
+      background: var(--secondary);
+      box-shadow: none;
+    }
+  }
+
+  &__sk {
+    display: block;
+    height: 0.8em;
+    border-radius: 6px;
+    background: linear-gradient(
+      90deg,
+      var(--primary-low) 0%,
+      var(--primary-very-low) 50%,
+      var(--primary-low) 100%
+    );
+    background-size: 200% 100%;
+    animation: relay-rooms-shimmer 1.4s ease-in-out infinite;
+
+    &--code {
+      width: 4.5em;
+      height: 1.1em;
+    }
+
+    &--line {
+      width: 70%;
+      max-width: 20em;
+    }
+
+    &--meter {
+      width: 3.6em;
+      height: 5px;
+    }
+
+    &--btn {
+      width: 4.5em;
+      height: 1.9em;
+      border-radius: 8px;
+    }
+  }
+
+  &__loading {
+    margin: 0.75em 0 0;
+    color: var(--primary-medium);
+    font-size: var(--font-down-1);
+    text-align: center;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Animations
+// ---------------------------------------------------------------------
+// `--success-rgb` holds a comma-separated triplet ("61, 133, 77"), which is the
+// only way to get the scheme's success colour at partial alpha — there is no
+// colour-mix function available across the supported Discourse versions.
+@keyframes relay-rooms-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(var(--success-rgb), 0.55);
+  }
+
+  70% {
+    box-shadow: 0 0 0 0.45em rgba(var(--success-rgb), 0);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--success-rgb), 0);
+  }
+}
+
+@keyframes relay-rooms-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes relay-rooms-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// Honour the OS setting: the pulse, shimmer and spinner are decorative, and
+// motion here is continuous rather than a one-off transition.
+@media (prefers-reduced-motion: reduce) {
+  .relay-rooms {
+    &__pulse,
+    &__sk {
+      animation: none;
+    }
+
+    &__refresh:disabled &__refresh-icon {
+      animation: none;
+    }
+
+    &__meter-fill,
+    &__room,
+    &__chip,
+    &__copy {
+      transition: none;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------
+// Narrow screens
+// ---------------------------------------------------------------------
+// The four zones become one column, but the order is preserved: identity,
+// context, capacity, then a full-width action row. Capacity stays above the
+// actions because it is what the action depends on.
+@media (max-width: 767px) {
+  .relay-rooms {
+    &__hero {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    &__live {
+      grid-column: 2;
+      justify-self: start;
+    }
+
+    &__bar {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 0.5em;
+    }
+
+    &__refresh {
+      justify-content: center;
+    }
+
+    &__room {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.55em;
+      padding: 0.8em 0.9em;
+    }
+
+    &__identity {
+      flex-direction: row;
+      align-items: center;
+      gap: 0.5em;
+    }
+
+    &__capacity {
+      justify-content: flex-start;
+    }
+
+    &__meter {
+      width: 6em;
+    }
+
+    &__map {
+      max-width: 100%;
+      white-space: normal;
+    }
+
+    &__host {
+      max-width: 12em;
+    }
+
+    &__actions {
+      gap: 0.5em;
+
+      .relay-rooms__join {
+        flex: 1 1 auto;
+        justify-content: center;
+      }
+    }
+
+    &__sk--line {
+      width: 60%;
+    }
   }
 }
 
@@ -281,40 +775,22 @@ div.relay-rooms {
   &__table {
     width: 100%;
     border-collapse: collapse;
+    font-size: var(--font-down-1);
 
     th,
     td {
-      padding: 0.5em 0.75em;
-      border-bottom: 1px solid var(--primary-low);
+      padding: 0.55em 0.75em;
+      border-bottom: 1px solid var(--content-border-color);
       text-align: left;
     }
-  }
-}
 
-@media (max-width: 767px) {
-  .relay-rooms {
-    &__room {
-      flex-direction: column;
-      align-items: stretch;
+    th {
+      color: var(--primary-medium);
+      font-weight: 500;
     }
 
-    &__room-actions {
-      margin-left: 0;
-
-      .btn,
-      .relay-rooms__join {
-        flex: 1 1 auto;
-        justify-content: center;
-      }
-    }
-
-    &__map-name {
-      max-width: 100%;
-      white-space: normal;
-    }
-
-    &__updated {
-      white-space: normal;
+    tbody tr:hover {
+      background: var(--primary-very-low);
     }
   }
 }

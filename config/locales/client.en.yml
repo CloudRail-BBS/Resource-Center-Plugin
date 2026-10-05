@@ -14,10 +14,15 @@ en:
       offline_hint: "Please try again later, or ask an admin to check the relay server."
       room_count: "%{count} rooms"
       players_count: "%{active} / %{total} players"
+      live: "Live"
+      capacity: "Capacity %{active} / %{total}"
+      capacity_full: "Full"
+      capacity_empty: "Empty"
       filters:
         all: "All"
         battleroom: "Waiting"
         ingame: "In game"
+        aria: "Filter rooms by status"
       table:
         room: "Room"
         host: "Host"

@@ -172,6 +172,12 @@ run_case "gjs-helper-not-imported" \
 run_case "global-i18n-in-initializer" \
   'sed -i "/^import { i18n } from \"discourse-i18n\";$/d" assets/javascripts/discourse/initializers/relay-rooms-navigation.js'
 
+# 25. The decorator is never applied, so every derived field the component reads
+#     is undefined. Nothing throws — the status pill loses its colour, the meter
+#     gets no width, and the Join/Copy buttons vanish behind a falsy {{#if}}.
+run_case "decorator-not-applied" \
+  'sed -i "s|this.rooms = decorateRooms(payload.rooms);|this.rooms = Array.isArray(payload.rooms) ? payload.rooms : [];|" assets/javascripts/discourse/controllers/relay-rooms/index.js'
+
 # 19. Serializer moved back into lib/, where it cannot resolve its
 #     Zeitwerk-loaded base class during plugin activation.
 run_case "serializer-in-lib" \

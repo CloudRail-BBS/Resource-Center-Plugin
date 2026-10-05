@@ -223,11 +223,36 @@ curl -i https://<你的域名>/relay-rooms/rooms.json
 改代码后先跑校验，再推仓库：
 
 ```bash
-npm install                 # 仅需 content-tag
-python scripts/validate.py  # 22 项静态检查
-bash scripts/selftest.sh    # 证明上述检查确实会失败（26 个注入用例）
+npm install                 # content-tag（校验 .gjs）+ sass（编译样式/预览）
+python scripts/validate.py  # 23 项静态检查
+bash scripts/selftest.sh    # 证明上述检查确实会失败（27 个注入用例）
 ruby scripts/test_parsing.rb  # 加载真实实现 + 真实数据验证解析逻辑
+python scripts/build-preview.py  # 生成可视化预览（见下）
 ```
+
+## 可视化预览
+
+改 UI 前先看效果，不用部署：
+
+```bash
+# 1. 抓一份本站接口的真实返回（序列化后的形状，不是中继原始数据）
+curl -H "Accept: application/json" \
+  https://<你的域名>/relay-rooms/rooms.json > preview/rooms.serialized.json
+
+# 2. 编译真实样式表并生成预览
+npx sass --no-source-map --style=expanded assets/stylesheets/relay-rooms.scss preview/relay-rooms.css
+python scripts/build-preview.py
+
+# 3. 打开 preview/index.html（浅色/深色切换、宽屏/移动端切换、全部状态）
+```
+
+预览刻意**复用真实实现**而不是重画一遍：
+
+- **房间数据走真实的 `decorateRoom`** —— `lib/relay-rooms.js` 由 node 加载（只对它的 `@ember/template` 导入做两行 shim）并调用 `decorateRooms()`。重写一遍装饰逻辑意味着预览可能显示一个插件根本渲染不出来的容量条。
+- **文案读真实的 `client.zh_CN.yml`**，不是手抄的。
+- **样式是真实 SCSS 的编译产物**，**配色变量来自本站自己的 `color_definitions_scheme_*.css`** —— 所以明暗两套是真实配色，不是近似值。
+
+⚠️ 注意：`decorateRoom` 处理的是**插件接口序列化后**的形状（`active_connection_size`、`player_size`），不是中继 API 的原始形状（`activeConnectionSize`、`playerSize`）。喂错形状不会报错，只会让所有容量字段变成 `undefined`、容量条全部渲染成空 —— 这一点也由 `validate.py` 的第 23 项守着。
 
 `validate.py` 覆盖的都是**静默失败**场景 —— 插件能加载、日志无报错、功能就是不工作：
 
