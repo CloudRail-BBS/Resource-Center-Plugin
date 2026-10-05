@@ -113,3 +113,38 @@ echo "  run this locally, where the real check lives:"
 echo "      python scripts/validate.py     # compiles every registered .scss"
 echo "  It mirrors Discourse's entrypoint (prepended_scss + @import \"<abs path>\")"
 echo "  and uses the same dart-sass, so a failure here is a failure there."
+
+echo
+echo "=== THE DECISIVE STEP: compile the target where nothing is swallowed ==="
+cat <<'CONSOLE'
+  During a rebuild, two failures are silent by design:
+
+    - Builder#compile wraps StylesheetCache.add in a bare `rescue` and only
+      writes `Rails.logger.warn "Completely unexpected error adding item to
+      cache ..."`. The build still reports success.
+    - The assets:precompile rake task rescues NoMethodError (among others) and
+      prints "Skipping precompilation of CSS cause schema is old".
+
+  Both leave the <link> in place with no file behind it. Running the compile by
+  hand skips both rescues and prints the real error -- and may simply fix it, by
+  writing the cache row the build failed to write.
+
+  Run this (it also re-caches the stylesheet, so the page may start working
+  immediately afterwards):
+
+      cd /var/discourse
+      ./launcher run app "cd /var/www/discourse && bundle exec rails runner 'Stylesheet::Manager::Builder.new(target: \"<TARGET>\", manager: nil).compile(force: true)'"
+
+  Substitute <TARGET> with the plugin directory name, then repeat with
+  <TARGET>_admin. Or interactively:
+
+      ./launcher enter app
+      cd /var/www/discourse && bundle exec rails c
+      > Stylesheet::Manager::Builder.new(target: "Resource-Center-Plugin", manager: nil).compile(force: true)
+      > Stylesheet::Manager::Builder.new(target: "Resource-Center-Plugin_admin", manager: nil).compile(force: true)
+      > StylesheetCache.where(target: "Resource-Center-Plugin").count   # expect 1+
+
+  A row count of 0 after a successful compile means add() raised and the
+  warning above is the only trace of it -- check the Rails log for
+  "Completely unexpected error adding item to cache".
+CONSOLE
