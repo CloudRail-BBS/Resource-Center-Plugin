@@ -1,12 +1,18 @@
 import { withPluginApi } from "discourse/lib/plugin-api";
 import { ajax } from "discourse/lib/ajax";
+import { i18n } from "discourse-i18n";
 import { ROOMS_URL, decorateRooms, roomsToMarkdown } from "../lib/relay-rooms";
 
 const SEL = ".d-editor-input";
 
+// Imported above rather than read off a global. discourse-i18n assigns only
+// `globalThis.I18n` (capital I), so the lowercase `i18n` does not exist as a
+// global — and the earlier version of this file guarded with
+// `typeof i18n === "function"`, which meant a missing global silently degraded
+// to printing raw keys like "relay_rooms.table.room" into the post instead of
+// failing loudly.
 function translation(key, params) {
-  // eslint-disable-next-line no-undef
-  return typeof i18n === "function" ? i18n(key, params) : key;
+  return i18n(key, params);
 }
 
 // Inserts text at the caret, keeping the composer's own undo history intact by

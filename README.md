@@ -111,6 +111,39 @@ cd /var/discourse && ./launcher rebuild app
 
 ## 前端看不到联机房？按这个顺序查
 
+### 0. 先看插件的 JS 是不是变成了一个 `throw`（最隐蔽，也最常见）
+
+**症状**：服务端渲染正常（无 JS 环境下能看到房间表格），但浏览器里页面空白、路由 404、导航也没有入口。看起来像路由问题，其实是**整个插件的 JS 被编译错误替换成了一行 `throw`**。
+
+一条命令就能确认：
+
+```bash
+# 从页面里找到插件的 JS 地址，然后看它的内容
+curl -s https://<域名>/relay-rooms | grep -oE 'src="[^"]*Resource-Center-Plugin[^"]*\.js[^"]*"'
+curl -s https://<域名>/assets/js/plugins/Resource-Center-Plugin_main-<hash>.digested.js
+```
+
+如果输出只有一行、以 `throw new Error("[PLUGIN ...] Compile error: ...` 开头，就是这个原因。它会**直接告诉你哪个文件、缺什么**：
+
+```
+throw new Error("[PLUGIN Resource-Center-Plugin] Compile error: SyntaxError:
+.../components/relay-rooms-page.gjs: Attempted to resolve a component or helper
+in a strict mode template, but that value was not in scope: i18n");
+```
+
+**原因**：`.gjs` 是严格模式模板，**没有隐式全局**。模板里用到的每个 helper 和组件都必须显式 import，否则是**编译错误**（不是运行时报错），而编译错误会让整个插件的 JS 变成一个 `throw` —— 路由、initializer、组件**一起消失**。
+
+最常见的两个：
+
+```js
+import { i18n } from "discourse-i18n";        // {{i18n "..."}}
+import { eq } from "discourse/truth-helpers";  // (eq a b)
+```
+
+⚠️ 注意 `discourse-i18n` 只把 **`globalThis.I18n`（大写 I）** 挂到全局，**没有小写的 `i18n` 全局**。所以在 `.js` 文件里也要 `import { i18n }`，不能直接调 `i18n(...)`。
+
+`scripts/check-gjs.mjs` 只校验**语法**，语法正确但 helper 未导入的文件它能通过 —— 所以 `scripts/validate.py` 里另有一项**作用域检查**（第 20 项）专门查这个。
+
 ### 1. 直接访问 `/relay-rooms`
 
 这一步能把「路由/页面问题」和「导航入口问题」分开：
@@ -150,7 +183,7 @@ curl -i https://<你的域名>/relay-rooms/rooms.json
 
 发帖时可以用工具栏的「联机房列表」按钮插入当前房间表格。
 
-### 4. 排查时的两个已知坑
+### 4. 排查时的已知坑
 
 - **`addCommunitySectionLink` 的第二个参数**（`secondary`）若传 `true`，链接会被塞进侧边栏的 **「更多…」抽屉**里而不是主列表——注册成功、无任何告警，只是"看起来没有入口"。本插件不传该参数。
 - **`relay_rooms_enabled` 的默认值只在从未被改动过时生效**。如果之前手动关过，存储值会覆盖默认值，必须显式打开。
@@ -191,8 +224,8 @@ curl -i https://<你的域名>/relay-rooms/rooms.json
 
 ```bash
 npm install                 # 仅需 content-tag
-python scripts/validate.py  # 20 项静态检查
-bash scripts/selftest.sh    # 证明上述检查确实会失败（24 个注入用例）
+python scripts/validate.py  # 22 项静态检查
+bash scripts/selftest.sh    # 证明上述检查确实会失败（26 个注入用例）
 ruby scripts/test_parsing.rb  # 加载真实实现 + 真实数据验证解析逻辑
 ```
 

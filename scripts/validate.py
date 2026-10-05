@@ -1123,6 +1123,155 @@ def check_metadata_parseable() -> None:
 
 
 # --------------------------------------------------------------------------
+# 20. Every identifier used in a .gjs template must be in scope
+#
+# Strict-mode .gjs templates have NO implicit globals. Every helper and component
+# is resolved from the module scope, and an unresolved one is a COMPILE error:
+#
+#   Attempted to resolve a component or helper in a strict mode template, but
+#   that value was not in scope: i18n
+#
+# lib/plugin/js_compiler.rb turns that into
+#   throw new Error("[PLUGIN x] Compile error: ...")
+# as the plugin's ENTIRE JS bundle. So the route, every initializer and every
+# component disappear together, while the server-rendered page keeps working —
+# which makes it look like a routing or nav problem rather than a template one.
+# That is exactly how `{{i18n ...}}` without an import broke this plugin.
+#
+# `i18n` is a named export of `discourse-i18n`; discourse-i18n assigns only
+# `globalThis.I18n` (capital I), so there is no lowercase global to fall back on.
+# `content-tag` (scripts/check-gjs.mjs) only validates SYNTAX, so it passes such
+# a file happily — scope checking has to be done separately, which is this.
+# --------------------------------------------------------------------------
+TEMPLATE_KEYWORDS = {
+    "if",
+    "else",
+    "unless",
+    "each",
+    "in",
+    "outlet",
+    "yield",
+    "let",
+    "as",
+    "with",
+    "has-block",
+    "has-block-params",
+    "component",
+    "helper",
+    "modifier",
+    "mount",
+    "array",
+    "hash",
+}
+
+
+def extract_template_blocks(source: str) -> str:
+    blocks = re.findall(r"<template>(.*?)</template>", source, re.S)
+    return "\n".join(blocks)
+
+
+def imported_names(source: str) -> set[str]:
+    names: set[str] = set()
+
+    for default in re.findall(r'import\s+([A-Za-z_$][\w$]*)\s+from\s*"', source):
+        names.add(default)
+
+    for group in re.findall(r'import\s*\{([^}]*)\}\s*from\s*"', source):
+        for part in group.split(","):
+            part = part.strip()
+            if part:
+                # `foo as bar` binds `bar`
+                names.add(part.split(" as ")[-1].strip())
+
+    return names
+
+
+def check_gjs_template_scope() -> None:
+    for path in sorted(ROOT.rglob("*.gjs")):
+        if "node_modules" in str(path):
+            continue
+
+        source = read(path)
+        template = extract_template_blocks(source)
+        if not template:
+            continue
+
+        # Strip string literals so their contents are not mistaken for code.
+        code = re.sub(r'"[^"]*"', '""', template)
+        code = re.sub(r"'[^']*'", "''", code)
+
+        available = imported_names(source)
+
+        # Block params are in scope inside the template.
+        for group in re.findall(r"as \|([^|]*)\|", code):
+            available.update(name.strip() for name in group.split())
+
+        used: set[str] = set()
+        used |= set(re.findall(r"\{\{#?([a-zA-Z_][\w-]*)", code))  # {{x}} / {{#x}}
+        used |= set(re.findall(r"\(([a-zA-Z_][\w-]*)", code))  # (x ...)
+        used |= set(re.findall(r"<([A-Z][\w]*)", code))  # <X />
+
+        unresolved = sorted(
+            name
+            for name in used
+            if name not in TEMPLATE_KEYWORDS
+            and name not in available
+            and name != "this"
+        )
+
+        if unresolved:
+            relative = path.relative_to(ROOT).as_posix()
+            fail(
+                f"{relative}: template uses {', '.join(unresolved)} with no import. "
+                "Strict-mode .gjs templates have no implicit globals, so this is a "
+                "compile error that replaces the plugin's ENTIRE JS bundle with a "
+                '`throw new Error("[PLUGIN ...] Compile error: ...")` — the route, '
+                "initializers and components all vanish at once while the "
+                "server-rendered page still works. Import it, e.g. "
+                '`import { i18n } from "discourse-i18n";`'
+            )
+
+
+# --------------------------------------------------------------------------
+# 21. `i18n(` must come from an import, never from a global
+#
+# discourse-i18n assigns only `globalThis.I18n` (capital I). The lowercase `i18n`
+# is a named export, so a bare `i18n(...)` in a .js file is a ReferenceError.
+#
+# The nastier variant is guarding it: `typeof i18n === "function" ? i18n(...) : key`
+# turns a missing global into raw keys printed into the UI, which looks like a
+# missing-translation bug rather than a missing import.
+# --------------------------------------------------------------------------
+def check_global_i18n_not_used() -> None:
+    candidates = [
+        path
+        for path in list(ROOT.rglob("*.js")) + list(ROOT.rglob("*.gjs"))
+        if "node_modules" not in str(path) and "scripts" not in path.parts
+    ]
+
+    for path in sorted(candidates):
+        source = read(path)
+
+        # `i18n(` as a call, not `I18n.t(` and not a property access.
+        if not re.search(r"(?<![\w.$])i18n\s*\(", source):
+            continue
+
+        if re.search(r'import\s*\{[^}]*\bi18n\b[^}]*\}\s*from', source):
+            continue
+        if re.search(r'import\s+i18n\s+from', source):
+            continue
+
+        relative = path.relative_to(ROOT).as_posix()
+        fail(
+            f"{relative} calls i18n() without importing it. discourse-i18n assigns "
+            "only `globalThis.I18n` (capital I), so there is no lowercase `i18n` "
+            'global. Add `import { i18n } from "discourse-i18n";`. Do not guard the '
+            'call with `typeof i18n === "function"` — that hides the failure and '
+            "prints raw translation keys instead."
+        )
+
+
+# --------------------------------------------------------------------------
 def main() -> int:
     checks = (
         check_plugin_name,
@@ -1142,6 +1291,8 @@ def main() -> int:
         check_site_setting_labels,
         check_imports,
         check_gjs_parse,
+        check_gjs_template_scope,
+        check_global_i18n_not_used,
         check_serializer_attributes,
         check_serialize_data,
         check_api_client,

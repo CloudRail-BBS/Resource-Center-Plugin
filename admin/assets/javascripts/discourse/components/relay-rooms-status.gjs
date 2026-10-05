@@ -4,6 +4,11 @@ import { action } from "@ember/object";
 import { service } from "@ember/service";
 import { ajax } from "discourse/lib/ajax";
 
+// Required, like every other template identifier in a strict-mode .gjs: an
+// unresolved helper is a compile error, and a compile error replaces the entire
+// plugin bundle with a `throw`.
+import { i18n } from "discourse-i18n";
+
 // Explicit imports: these are NOT auto-registered as template helpers any more.
 // Verified against core —
 //   frontend/discourse/admin/templates/admin-logs/screened-urls.gjs

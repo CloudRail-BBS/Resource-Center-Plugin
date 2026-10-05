@@ -1,5 +1,11 @@
 import { withPluginApi } from "discourse/lib/plugin-api";
 
+// `i18n` is a NAMED EXPORT, not a global. discourse-i18n only assigns
+// `globalThis.I18n` (capital I), so a bare `i18n(...)` here is a ReferenceError.
+// Import it, and do not paper over it with an eslint-disable for no-undef — that
+// suppresses exactly the diagnostic that catches this.
+import { i18n } from "discourse-i18n";
+
 const ROUTE = "relay-rooms";
 const ICON = "plug";
 
@@ -27,10 +33,7 @@ export default {
     }
 
     withPluginApi((api) => {
-      const title = () =>
-        // `i18n` is a global on the Discourse client.
-        // eslint-disable-next-line no-undef
-        i18n("relay_rooms.nav_label");
+      const title = () => i18n("relay_rooms.nav_label");
 
       // Feeds the sidebar's Community section.
       //

@@ -160,6 +160,18 @@ run_case "colon-only-comment-line" \
 run_case "community-link-in-more-drawer" \
   'sed -i "s|^      api.addCommunitySectionLink({|      api.addCommunitySectionLink(\n        {|; s|^      });$|        },\n        true,\n      );|" assets/javascripts/discourse/initializers/relay-rooms-navigation.js'
 
+# 23. A template helper used without an import. Strict-mode .gjs has no implicit
+#     globals, so this is a COMPILE error that replaces the plugin's entire JS
+#     bundle with a `throw` — route, initializers and components all vanish.
+run_case "gjs-helper-not-imported" \
+  'sed -i "/^import { i18n } from \"discourse-i18n\";$/d" assets/javascripts/discourse/components/relay-rooms-page.gjs'
+
+# 24. Same helper used from an initializer with no import — a ReferenceError at
+#     runtime rather than a compile error, and previously guarded with a typeof
+#     check that degraded to printing raw translation keys.
+run_case "global-i18n-in-initializer" \
+  'sed -i "/^import { i18n } from \"discourse-i18n\";$/d" assets/javascripts/discourse/initializers/relay-rooms-navigation.js'
+
 # 19. Serializer moved back into lib/, where it cannot resolve its
 #     Zeitwerk-loaded base class during plugin activation.
 run_case "serializer-in-lib" \

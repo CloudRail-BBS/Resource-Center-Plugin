@@ -5,10 +5,20 @@ import { fn } from "@ember/helper";
 import { on } from "@ember/modifier";
 import RelayRoomsIcon from "./relay-rooms-icon";
 
-// `eq` is not an auto-registered helper: every template identifier must be in
-// scope, and an unresolved helper is a compile-time failure which replaces the
-// entire plugin bundle with a `throw`. Import it explicitly rather than relying
-// on it being global.
+// `i18n` MUST be imported. Strict-mode .gjs templates have no implicit globals:
+// every helper and component is resolved from the module scope, and an
+// unresolved one is a COMPILE error, not a runtime miss. The whole plugin bundle
+// is then replaced by a single `throw`, so the route, the initializers and the
+// components all vanish at once while the server-rendered page still works —
+// which makes it look like a routing problem rather than a template one.
+//
+// Note `discourse-i18n` sets only `globalThis.I18n` (capital I). There is no
+// lowercase `i18n` global, so this import is required in .js files too.
+import { i18n } from "discourse-i18n";
+
+// `eq` is not an auto-registered helper either: every template identifier must
+// be in scope, and an unresolved helper is the same compile failure described
+// above.
 import { eq } from "discourse/truth-helpers";
 
 // Status tabs. Each entry precomputes its own i18n key so the template only

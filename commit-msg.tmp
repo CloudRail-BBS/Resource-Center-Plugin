@@ -1,0 +1,40 @@
+Fix the real cause: .gjs templates used i18n without importing it
+
+The page rendered nothing in the browser while the server-rendered view worked
+perfectly, which pointed at routing. The actual cause was upstream of that: the
+plugin's entire JS bundle was one line.
+
+  throw new Error("[PLUGIN Resource-Center-Plugin] Compile error: SyntaxError:
+  .../components/relay-rooms-page.gjs: Attempted to resolve a component or
+  helper in a strict mode template, but that value was not in scope: i18n");
+
+Strict-mode .gjs templates have no implicit globals. Every helper and component
+is resolved from module scope, and an unresolved one is a COMPILE error — not a
+runtime miss. lib/plugin/js_compiler.rb then emits the whole plugin's JS as that
+single `throw`, so the route, both initializers and every component disappeared
+together. Nothing logged anything, and the server-rendered page kept working, so
+it looked like a routing or navigation problem.
+
+Fixed by importing i18n in the four files that use it:
+  assets/javascripts/discourse/components/relay-rooms-page.gjs
+  admin/assets/javascripts/discourse/components/relay-rooms-status.gjs
+  assets/javascripts/discourse/initializers/relay-rooms-navigation.js
+  assets/javascripts/discourse/initializers/relay-rooms-composer.js
+
+Worth recording why the import is mandatory even in .js: discourse-i18n does
+`globalThis.I18n = new I18n()` — capital I only. The lowercase `i18n` is purely a
+named export, so `i18n(...)` was a ReferenceError in the initializers. The
+composer one was worse: it guarded with `typeof i18n === "function"` and fell
+back to returning the key, so a missing global would have printed raw keys like
+"relay_rooms.table.room" into posts instead of failing.
+
+Validation, since the existing checks all passed on the broken build:
+  - content-tag only validates SYNTAX, so check-gjs.mjs accepted these files
+  - new check 20 extracts each <template> and verifies every identifier used as
+    {{x}} / {{#x}} / (x ...) / <X /> is imported, a template keyword, or a block
+    param. Verified to fail when the i18n import is removed.
+  - new check 21 rejects `i18n(` in .js/.gjs without an import, and the failure
+    message explicitly warns against the typeof guard
+  - 22 checks, 26 injected defects, all caught
+  - README leads the triage section with this, including the one-liner to fetch
+    the plugin's JS and see the `throw`
