@@ -144,6 +144,46 @@ import { eq } from "discourse/truth-helpers";  // (eq a b)
 
 `scripts/check-gjs.mjs` 只校验**语法**，语法正确但 helper 未导入的文件它能通过 —— 所以 `scripts/validate.py` 里另有一项**作用域检查**（第 20 项）专门查这个。
 
+### 0.5 页面能开、但完全没有样式（连 `ul` 的小圆点都在）
+
+**症状**：内容是渲染出来的，但没有任何卡片、颜色、间距——列表项前面还有默认的 `•` 小圆点；「加入房间」按钮是蓝的（那是 Discourse 自己的 `.btn`），而「复制」按钮是个灰色方块（那是**浏览器默认按钮**样式）。
+
+**这几乎可以断定：插件样式表 404 了。**
+
+```bash
+curl -s https://<域名>/relay-rooms | grep -oE '/stylesheets/Resource-Center-Plugin_[a-f0-9]+\.css'
+curl -s -o /dev/null -w "%{http_code}\n" https://<域名><上面那条路径>
+```
+
+`<link>` 一定会被输出（它来自插件注册表），但文件不一定存在。Discourse 的 CSS **不是按需编译**的——它从 `stylesheet_cache` 表里读，而那张表是**构建时**写进去的。所以 404 = 构建阶段没写进去。
+
+一条命令定位：
+
+```bash
+bash scripts/diagnose-stylesheet.sh https://<域名> /var/discourse
+```
+
+它会对比本插件与其他插件的 HTTP 状态、在日志里找 `precompile target:` 行、并复现编译。
+
+**构建日志里搜这些**（重建输出只在终端里，要自己 tee 下来）：
+
+```bash
+cd /var/discourse && ./launcher rebuild app 2>&1 | tee /tmp/rebuild.log
+grep -nE 'precompile target|SCSS compilation error|ScssError' /tmp/rebuild.log
+```
+
+关键区别（已核对核心源码）：
+
+| 目标类型 | 编译报错时 |
+| --- | --- |
+| **插件** | `raise Discourse::ScssError` —— **整个构建失败** |
+| 主题 | 吞掉，写成一句注释 |
+| 配色表 | 生产环境下记日志并吞掉 |
+
+所以插件样式表编译失败会让构建**直接失败**。如果构建成功了但样式表仍 404，那就不是 SCSS 语法问题，而是编译/缓存环节没跑到——日志里的 `precompile target:` 行会说明它有没有被排进队列。
+
+本地先跑 `python scripts/validate.py`：第 24 项会**实际调用 sass 编译**每个注册的样式表，并复刻 Discourse 的 `@import` 入口方式。
+
 ### 1. 直接访问 `/relay-rooms`
 
 这一步能把「路由/页面问题」和「导航入口问题」分开：
@@ -224,7 +264,7 @@ curl -i https://<你的域名>/relay-rooms/rooms.json
 
 ```bash
 npm install                 # content-tag（校验 .gjs）+ sass（编译样式/预览）
-python scripts/validate.py  # 23 项静态检查
+python scripts/validate.py  # 24 项静态检查
 bash scripts/selftest.sh    # 证明上述检查确实会失败（27 个注入用例）
 ruby scripts/test_parsing.rb  # 加载真实实现 + 真实数据验证解析逻辑
 python scripts/build-preview.py  # 生成可视化预览（见下）

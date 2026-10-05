@@ -19,3 +19,8 @@ tmp/
 # Preview output (scripts/build-preview.py)
 preview/
 .preview-tmp/
+
+# Windows reserved device name. Created once by passing a device path as a
+# command output argument; cannot be deleted, renamed or indexed afterwards.
+# Listed so it can never break `git add -A`.
+nul

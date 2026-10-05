@@ -16,6 +16,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -1350,6 +1351,85 @@ def check_derived_fields_are_applied() -> None:
 
 
 # --------------------------------------------------------------------------
+# 24. Every registered stylesheet must actually compile
+#
+# Discourse compiles a plugin's stylesheet by generating an entrypoint of
+# `prepended_scss` + `@import "<absolute path>"` and rendering it with
+# SassC::Engine (sassc-embedded → dart-sass). For a PLUGIN target a Sass error is
+# re-raised as Discourse::ScssError and fails the whole build; for a THEME it is
+# swallowed into a comment. That asymmetry means a broken plugin stylesheet is
+# loud — but only at build time, on the server.
+#
+# Checking it here costs one `sass` invocation and turns a failed rebuild into a
+# local error. `npx sass` is used rather than a Ruby Sass binding so this works
+# without a Discourse checkout; version drift is noted in the failure message.
+#
+# It also mirrors Discourse's `@import` entrypoint rather than compiling the file
+# directly, because the two are not always equivalent.
+# --------------------------------------------------------------------------
+def check_scss_compiles() -> None:
+    stylesheets = sorted((ROOT / "assets" / "stylesheets").glob("*.scss"))
+    if not stylesheets:
+        return
+
+    sass = shutil_which("sass")
+    use_npx = False
+    if not sass:
+        sass = shutil_which("npx")
+        use_npx = True
+    if not sass:
+        warn("sass/npx not available; SCSS compile check skipped")
+        return
+
+    for path in stylesheets:
+        # Everything goes in a real temp directory. Never pass a device path such
+        # as /dev/null as sass's output: on Windows that creates a file literally
+        # named `nul`, which is a reserved device name and then cannot be deleted,
+        # renamed, or indexed by git — it breaks `git add -A` from that moment on.
+        with tempfile.TemporaryDirectory() as tmp:
+            entry = Path(tmp) / "_entrypoint.scss"
+            out = Path(tmp) / "out.css"
+
+            # Mirror Discourse: it compiles `prepended_scss + @import "<abs path>"`
+            # rather than the file directly, and the two are not always equivalent.
+            entry.write_text(f'@import "{path.name}";\n', encoding="utf-8")
+
+            command = [sass]
+            if use_npx:
+                command.append("sass")
+            command += [
+                "--load-path",
+                str(path.parent),
+                "--style=compressed",
+                "--no-source-map",
+                str(entry),
+                str(out),
+            ]
+
+            try:
+                result = subprocess.run(command, capture_output=True, text=True, cwd=str(ROOT))
+            except OSError as error:
+                warn(f"could not run sass ({error}); SCSS compile check skipped")
+                return
+
+        # Sass prints deprecations on stderr but still exits 0; only a non-zero
+        # exit is a real failure.
+        if result.returncode != 0:
+            detail = "\n".join(
+                line
+                for line in (result.stdout + result.stderr).splitlines()
+                if "DEPRECATION" not in line and line.strip()
+            )
+            fail(
+                f"assets/stylesheets/{path.name} fails to compile:\n{detail}\n"
+                "Discourse renders plugin stylesheets through SassC::Engine and re-raises a "
+                "Sass error as Discourse::ScssError for plugin targets, so this fails the "
+                "whole rebuild. Check the installed sass version against the one Discourse "
+                "ships (see sass-embedded in its Gemfile.lock)."
+            )
+
+
+# --------------------------------------------------------------------------
 def main() -> int:
     checks = (
         check_plugin_name,
@@ -1372,6 +1452,7 @@ def main() -> int:
         check_gjs_template_scope,
         check_global_i18n_not_used,
         check_derived_fields_are_applied,
+        check_scss_compiles,
         check_serializer_attributes,
         check_serialize_data,
         check_api_client,
